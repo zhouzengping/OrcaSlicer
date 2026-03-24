@@ -147,17 +147,21 @@ void WebPreprintDialog::RunScript(const wxString &javascript)
 
 void WebPreprintDialog::OnNavigationRequest(wxWebViewEvent &evt)
 {
+    BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << " start to load resource";
     evt.Skip();
 }
 
 void WebPreprintDialog::OnNavigationComplete(wxWebViewEvent &evt)
 {
+    BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << "load resource finished";
     m_browser->Show();
     Layout();
+    evt.Skip();
 }
 
 void WebPreprintDialog::OnDocumentLoaded(wxWebViewEvent &evt)
 {
+    BOOST_LOG_TRIVIAL(fatal) << __FUNCTION__ << "page load finished";
     evt.Skip();
 }
 
@@ -176,7 +180,7 @@ void WebPreprintDialog::OnError(wxWebViewEvent &event)
     }
 
     BOOST_LOG_TRIVIAL(fatal) << __FUNCTION__<< boost::format(":WebPreprintDialog error loading page %1% %2% %3% %4%") % event.GetURL() % event.GetTarget() %e % event.GetString();
-    
+    event.Skip();
 }
 
 void WebPreprintDialog::OnScriptMessage(wxWebViewEvent &evt)
@@ -188,7 +192,7 @@ void WebPreprintDialog::OnScriptMessage(wxWebViewEvent &evt)
 
     // test
     SSWCP::handle_web_message(evt.GetString().ToUTF8().data(), m_browser);
-
+    evt.Skip();
 }
 
 void WebPreprintDialog::EndModalWithResult(int code)
