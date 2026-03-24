@@ -37,7 +37,9 @@ PrinterWebView::PrinterWebView(wxWindow *parent)
         wxLogError("Could not init m_browser");
         return;
     }
-
+    
+    m_browser->Bind(wxEVT_WEBVIEW_NAVIGATING, &PrinterWebView::OnNavigating, this);
+    m_browser->Bind(wxEVT_WEBVIEW_NAVIGATED, &PrinterWebView::OnNavigated, this);
     m_browser->Bind(wxEVT_WEBVIEW_ERROR, &PrinterWebView::OnError, this);
     m_browser->Bind(wxEVT_WEBVIEW_LOADED, &PrinterWebView::OnLoaded, this);
     m_browser->Bind(wxEVT_WEBVIEW_SCRIPT_MESSAGE_RECEIVED, &PrinterWebView::OnScriptMessage, this, m_browser->GetId());
@@ -66,10 +68,9 @@ PrinterWebView::~PrinterWebView()
 }
 
 
+
 void PrinterWebView::load_url(wxString& url, wxString apikey)
 {
-//    this->Show();
-//    this->Raise();
     if (m_browser == nullptr)
         return;
     m_apikey = apikey;
@@ -84,8 +85,6 @@ void PrinterWebView::load_url(wxString& url, wxString apikey)
     m_browser->LoadURL(url);
 
     m_browser->Show();
-    //m_browser->SetFocus();
-    UpdateState();
 }
 
 void PrinterWebView::reload()
@@ -136,6 +135,17 @@ void PrinterWebView::SendAPIKey()
     m_browser->AddUserScript(script);
     m_browser->Reload();
 }
+void PrinterWebView::OnNavigating(wxWebViewEvent& evt) 
+{
+    BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << " start to load resource";
+    evt.Skip();
+}
+
+void PrinterWebView::OnNavigated(wxWebViewEvent& evt)
+{
+    BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << "load resource finished";
+    evt.Skip();
+}
 
 void PrinterWebView::OnError(wxWebViewEvent &evt)
 {
@@ -167,6 +177,7 @@ void PrinterWebView::OnError(wxWebViewEvent &evt)
         break;
       }
     BOOST_LOG_TRIVIAL(fatal) << __FUNCTION__<< boost::format(":PrinterWebView error loading page %1% %2% %3% %4%") %evt.GetURL() %evt.GetTarget() %e %evt.GetString();
+    evt.Skip()
 }
 
 void PrinterWebView::OnLoaded(wxWebViewEvent &evt)
@@ -174,6 +185,10 @@ void PrinterWebView::OnLoaded(wxWebViewEvent &evt)
     if (evt.GetURL().IsEmpty())
         return;
     SendAPIKey();
+
+    BOOST_LOG_TRIVIAL(fatal) << __FUNCTION__ << "page load finished";
+
+    evt.Skip();
 }
 
 void PrinterWebView::OnScriptMessage(wxWebViewEvent& evt) {
@@ -184,6 +199,8 @@ void PrinterWebView::OnScriptMessage(wxWebViewEvent& evt) {
 
     // test
     SSWCP::handle_web_message(evt.GetString().ToUTF8().data(), m_browser);
+
+    evt.Skip();
 }
 
 
