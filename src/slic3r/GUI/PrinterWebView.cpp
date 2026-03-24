@@ -37,7 +37,6 @@ PrinterWebView::PrinterWebView(wxWindow *parent)
         wxLogError("Could not init m_browser");
         return;
     }
-    BOOST_LOG_TRIVIAL(fatal) << "init and printer webview address:" << &m_browser;
 
     m_browser->Bind(wxEVT_WEBVIEW_ERROR, &PrinterWebView::OnError, this);
     m_browser->Bind(wxEVT_WEBVIEW_LOADED, &PrinterWebView::OnLoaded, this);
@@ -69,6 +68,8 @@ PrinterWebView::~PrinterWebView()
 
 void PrinterWebView::load_url(wxString& url, wxString apikey)
 {
+//    this->Show();
+//    this->Raise();
     if (m_browser == nullptr)
         return;
     m_apikey = apikey;
@@ -79,9 +80,12 @@ void PrinterWebView::load_url(wxString& url, wxString apikey)
     } else {
         wxGetApp().fltviews().remove_printer_view(this);
     }
-    BOOST_LOG_TRIVIAL(fatal) << "load and printer webview address:" << &m_browser;
- 
+
     m_browser->LoadURL(url);
+
+    m_browser->Show();
+    //m_browser->SetFocus();
+    UpdateState();
 }
 
 void PrinterWebView::reload()

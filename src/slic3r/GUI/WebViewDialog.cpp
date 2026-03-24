@@ -306,12 +306,30 @@ void WebViewPanel::CheckServerAndLoadRetry()
 
 void WebViewPanel::load_url(wxString& url)
 {
+    this->Show();
+    this->Raise();
+
+    // Debug: Log before loading
+    BOOST_LOG_TRIVIAL(info) << "[WebView] load_url - Loading URL: " << url.ToUTF8().data();
+    BOOST_LOG_TRIVIAL(info) << "[WebView] load_url - HTTP Server status: "
+        << (wxGetApp().m_page_http_server.is_started() ? "RUNNING" : "NOT STARTED");
+    BOOST_LOG_TRIVIAL(info) << "[WebView] load_url - HTTP Server port: "
+        << wxGetApp().m_page_http_server.get_port();
+
+    /*m_url->SetLabelText(url);
+
+    if (wxGetApp().get_mode() == comDevelop)
+        wxLogMessage(m_url->GetValue());*/
     m_browser->LoadURL(url);
 
     wxGetApp().fltviews().add_webview_panel(this, url);
 
     m_browser->SetFocus();
     UpdateState();
+
+    // Debug: Log after loading
+    BOOST_LOG_TRIVIAL(info) << "[WebView] load_url - Load command sent, current URL: "
+        << m_browser->GetCurrentURL().ToUTF8().data();
 }
 
 /**

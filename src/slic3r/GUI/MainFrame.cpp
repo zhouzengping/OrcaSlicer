@@ -1134,6 +1134,7 @@ void MainFrame::init_tabpanel() {
         wxString key = evt.GetAPIkey();
         m_printer_view->load_url(url, key);
     });
+    m_printer_view->Hide();
 
     if (wxGetApp().is_enable_multi_machine()) {
         m_multi_machine = new MultiMachinePage(m_tabpanel, wxID_ANY, wxDefaultPosition, wxDefaultSize);
@@ -1172,7 +1173,7 @@ void MainFrame::show_device(bool bBBLPrinter) {
             return;
         // Remove printer view
         if ((idx = m_tabpanel->FindPage(m_printer_view)) != wxNOT_FOUND) {
-            //m_printer_view->Show(false);
+            m_printer_view->Show(false);
             m_tabpanel->RemovePage(idx);
         }
 
@@ -1232,6 +1233,7 @@ void MainFrame::show_device(bool bBBLPrinter) {
                 m_printer_view->load_url(url, key);
             });
         }
+        m_printer_view->Show(false);
         m_tabpanel->InsertPage(tpMonitor, m_printer_view, _L("Device"), std::string("tab_monitor_active"),
                                std::string("tab_monitor_active"));
     }
@@ -2786,6 +2788,7 @@ void MainFrame::init_menubar_as_editor()
             },
             this, [this]() { return m_tabpanel->GetSelection() == TabPosition::tp3DEditor; },
             [this]() { return wxGetApp().show_outline(); }, this);
+
         /*viewMenu->AppendSeparator();
         append_menu_check_item(viewMenu, wxID_ANY, _L("Show &Wireframe") + "\t" + ctrl + shift + _L("Enter"), _L("Show wireframes in 3D scene."),
             [this](wxCommandEvent&) { m_plater->toggle_show_wireframe(); m_plater->get_current_canvas3D()->post_event(SimpleEvent(wxEVT_PAINT)); }, this,

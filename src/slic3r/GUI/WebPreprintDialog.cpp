@@ -34,7 +34,7 @@ WebPreprintDialog::WebPreprintDialog()
         wxLogError("Could not init m_browser");
         return;
     }
-    //m_browser->Hide();
+    m_browser->Hide();
 
     // Connect the webview events
     Bind(wxEVT_WEBVIEW_NAVIGATING, &WebPreprintDialog::OnNavigationRequest, this, m_browser->GetId());
@@ -56,6 +56,12 @@ WebPreprintDialog::WebPreprintDialog()
     CenterOnParent();
 
     wxGetApp().UpdateDlgDarkUI(this);
+
+    auto ptr = wxGetApp().get_web_device_dialog();
+    if (ptr) {
+        delete ptr;
+    }
+
     wxGetApp().set_web_preprint_dialog(this);
 }
 
