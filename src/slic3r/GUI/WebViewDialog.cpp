@@ -665,7 +665,9 @@ void WebViewPanel::OnNavigationRequest(wxWebViewEvent& evt)
     else
     {
         UpdateState();
+		evt.Skip();
     }
+    
 }
 
 /**
@@ -680,6 +682,8 @@ void WebViewPanel::OnNavigationComplete(wxWebViewEvent& evt)
         wxLogMessage("%s", "Navigation complete; url='" + evt.GetURL() + "'");
     UpdateState();
     ShowNetpluginTip();
+
+    evt.Skip();
 }
 
 /**
@@ -695,12 +699,15 @@ void WebViewPanel::OnDocumentLoaded(wxWebViewEvent& evt)
             wxLogMessage("%s", "Document loaded; url='" + evt.GetURL() + "'");
     }
     UpdateState();
+
+    evt.Skip();
 }
 
 void WebViewPanel::OnTitleChanged(wxWebViewEvent &evt)
 {
     BOOST_LOG_TRIVIAL(trace) << __FUNCTION__ << ": " << evt.GetString().ToUTF8().data();
     // wxGetApp().CallAfter([this] { SendRecentList(); });
+    evt.Skip();
 }
 
 /**
@@ -725,6 +732,8 @@ void WebViewPanel::OnNewWindow(wxWebViewEvent& evt)
         m_browser->LoadURL(evt.GetURL());
 
     UpdateState();
+
+    evt.Skip();
 }
 
 void WebViewPanel::OnScriptMessage(wxWebViewEvent& evt)
@@ -756,6 +765,8 @@ void WebViewPanel::OnScriptMessage(wxWebViewEvent& evt)
     else {
         m_response_js.clear();
     }
+
+    evt.Skip();
 }
 
 void WebViewPanel::OnScriptResponseMessage(wxCommandEvent& WXUNUSED(evt))
@@ -973,7 +984,7 @@ void WebViewPanel::OnError(wxWebViewEvent& event)
     case wxWEBVIEW_NAV_ERR_OTHER: e = "wxWEBVIEW_NAV_ERR_OTHER"; break;
     }
     BOOST_LOG_TRIVIAL(fatal) << __FUNCTION__<< boost::format(":PrinterWebView error loading page %1% %2% %3% %4%") % event.GetURL() % event.GetTarget() %e % event.GetString();
-    
+    event.Skip();
 }
 
 
