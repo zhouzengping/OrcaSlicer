@@ -2829,7 +2829,25 @@ void MainFrame::init_menubar_as_editor()
                 plater()->refresh_print();
         },
         "", nullptr, []() { return true; }, this, 1);
-      
+
+    append_menu_item(
+        parent_menu, wxID_ANY, _L("TestHomePage"), "",
+        [this](wxCommandEvent&) {
+            wxString url      = wxString::FromUTF8(LOCALHOST_URL + std::to_string(PAGE_HTTP_PORT) + "/web/flutter_web/index.html?path=/");
+            m_webview->load_url(url);            
+        },
+        "", nullptr, []() { return true; }, this);
+
+    append_menu_item(
+        parent_menu, wxID_ANY, _L("ExitHomePage"), "",
+        [this](wxCommandEvent&) {
+            wxString url      = wxString::FromUTF8(LOCALHOST_URL + std::to_string(PAGE_HTTP_PORT) + "/web/flutter_web/index.html?path=1");
+            auto     real_url = wxGetApp().get_international_url(url);
+
+            m_webview->load_url(real_url);
+        },
+        "", nullptr, []() { return true; }, this);
+
     append_menu_item(
         parent_menu, wxID_ANY, _L("ReloadHomeAndDevicePage"), "",
         [this](wxCommandEvent&) { 

@@ -487,7 +487,7 @@ void HttpServer::start_health_check()
                 BOOST_LOG_TRIVIAL(debug) << "HTTP server health check passed";
             }
         }
-        BOOST_LOG_TRIVIAL(error) << "Health check thread stopped";
+        BOOST_LOG_TRIVIAL(debug) << "Health check thread stopped";
     });
 }
 
@@ -498,7 +498,7 @@ void HttpServer::stop_health_check()
         std::lock_guard<std::mutex> lock(m_health_check_mutex);
         
         if (!m_health_check_enabled) {
-            BOOST_LOG_TRIVIAL(error) << "Health check is not running";
+            BOOST_LOG_TRIVIAL(debug) << "Health check is not running";
             return;
         }
         
