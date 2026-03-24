@@ -186,7 +186,7 @@ void PrinterWebView::OnLoaded(wxWebViewEvent &evt)
         return;
     SendAPIKey();
 
-    BOOST_LOG_TRIVIAL(fatal) << __FUNCTION__ << "load resource finished";
+    BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << "load resource finished";
 
     evt.Skip();
 }
