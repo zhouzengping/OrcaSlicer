@@ -2902,7 +2902,21 @@ void MainFrame::init_menubar_as_editor()
 
             m_printer_view->load_url(real_url);
         }, "", nullptr, []() { return true; }, this);
-    //parent_menu->Insert(1, preference_item);
+
+    append_menu_item(
+        parent_menu, wxID_ANY, _L("TestDevicePage"), "",
+        [this](wxCommandEvent&) {
+
+            wxString url      = wxString::FromUTF8(LOCALHOST_URL + std::to_string(PAGE_HTTP_PORT) + "/web/flutter_web/index.html?path=1");
+            auto     real_url = wxGetApp().get_international_url(url);
+
+            WebPreprintDialog* dialog   = new WebPreprintDialog();
+            dialog->load(real_url);
+            dialog->ShowModal();
+
+            delete dialog;
+        },
+        "", nullptr, []() { return true; }, this);
 #endif
     // Help menu
     auto helpMenu = generate_help_menu();
