@@ -240,8 +240,11 @@ WebViewPanel::~WebViewPanel()
     BOOST_LOG_TRIVIAL(trace) << __FUNCTION__ << " End";
 }
 
-void WebViewPanel::reload() {
-    m_browser->Reload();
+void WebViewPanel::reload() { 
+    auto url = m_browser->GetCurrentURL();
+    m_browser->Stop();
+    load_url(url);
+    //m_browser->Reload();
 }
 
 // Define static const member
@@ -316,10 +319,7 @@ void WebViewPanel::load_url(wxString& url)
     BOOST_LOG_TRIVIAL(info) << "[WebView] load_url - HTTP Server port: "
         << wxGetApp().m_page_http_server.get_port();
 
-    /*m_url->SetLabelText(url);
-
-    if (wxGetApp().get_mode() == comDevelop)
-        wxLogMessage(m_url->GetValue());*/
+    m_browser->Stop();
     m_browser->LoadURL(url);
 
     wxGetApp().fltviews().add_webview_panel(this, url);

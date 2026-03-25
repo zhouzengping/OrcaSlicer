@@ -97,8 +97,10 @@ void WebPreprintDialog::set_gcode_file_name(const std::string& filename)
 { m_gcode_file_name = filename; }
 
 void WebPreprintDialog::reload()
-{
-    load_url(m_prePrint_url);
+{ 
+    auto url = m_browser->GetCurrentURL();
+    load_url(url);
+    //load_url(m_prePrint_url);
 }
 
 void WebPreprintDialog::RecoverWebView()
@@ -113,6 +115,7 @@ void WebPreprintDialog::load_url(wxString &url)
 {
     wxGetApp().fltviews().add_view(m_browser, url);
 
+    m_browser->Stop();
     m_browser->Show();
     m_browser->LoadURL(url);
     

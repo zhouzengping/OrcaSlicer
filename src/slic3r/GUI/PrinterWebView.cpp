@@ -81,15 +81,17 @@ void PrinterWebView::load_url(wxString& url, wxString apikey)
     } else {
         wxGetApp().fltviews().remove_printer_view(this);
     }
-
+    m_browser->Stop();
     m_browser->LoadURL(url);
 
     m_browser->Show();
 }
 
 void PrinterWebView::reload()
-{
-    m_browser->Reload();
+{ 
+    auto url = m_browser->GetCurrentURL();
+    load_url(url);
+    //m_browser->Reload();
 }
 
 void PrinterWebView::rebuild_browser()
