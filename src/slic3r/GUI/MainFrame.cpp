@@ -2880,8 +2880,13 @@ void MainFrame::init_menubar_as_editor()
             #endif
 
         flush_logs();
-        m_webview->reload();
-        m_printer_view->reload();
+        // Rebuild URLs with the runtime HTTP server port, so reload won't keep stale port.
+        wxString home_url = wxString::FromUTF8(get_page_base_url() + "/web/flutter_web/index.html?path=1");
+        wxString device_url = wxString::FromUTF8(get_page_base_url() + "/web/flutter_web/index.html?path=2");
+        wxString real_home_url = wxGetApp().get_international_url(home_url);
+        wxString real_device_url = wxGetApp().get_international_url(device_url);
+        m_webview->load_url(real_home_url);
+        m_printer_view->load_url(real_device_url);
     },
     "", nullptr, []() { return true; }, this);
 
