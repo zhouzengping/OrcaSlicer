@@ -2830,11 +2830,15 @@ void MainFrame::init_menubar_as_editor()
         },
         "", nullptr, []() { return true; }, this, 1);
 
+    auto get_page_base_url = []() {
+        return std::string(LOCALHOST_URL) + std::to_string(wxGetApp().m_page_http_server.get_port());
+    };
+
     append_menu_item(
         parent_menu, wxID_ANY, _L("TestHomePage"), "",
         [this](wxCommandEvent&) {
 			BOOST_LOG_TRIVIAL(error) << "TestHomePage";
-            wxString url      = wxString::FromUTF8(LOCALHOST_URL + std::to_string(PAGE_HTTP_PORT) + "/web/flutter_web/index.html?path=/");
+            wxString url      = wxString::FromUTF8(get_page_base_url() + "/web/flutter_web/index.html?path=/");
             m_webview->load_url(url);            
         },
         "", nullptr, []() { return true; }, this);
@@ -2842,7 +2846,7 @@ void MainFrame::init_menubar_as_editor()
     append_menu_item(
         parent_menu, wxID_ANY, _L("ExitTestHomePage"), "",
         [this](wxCommandEvent&) {
-            wxString url      = wxString::FromUTF8(LOCALHOST_URL + std::to_string(PAGE_HTTP_PORT) + "/web/flutter_web/index.html?path=1");
+            wxString url      = wxString::FromUTF8(get_page_base_url() + "/web/flutter_web/index.html?path=1");
             auto     real_url = wxGetApp().get_international_url(url);
             BOOST_LOG_TRIVIAL(error) << "ExitTestHomePage";
             m_webview->load_url(real_url);
@@ -2900,7 +2904,7 @@ void MainFrame::init_menubar_as_editor()
 
     append_menu_item(parent_menu, wxID_ANY, _L("ExitTestDevicePage"), "",
             [this](wxCommandEvent&) {
-            wxString url      = wxString::FromUTF8(LOCALHOST_URL + std::to_string(PAGE_HTTP_PORT) + "/web/flutter_web/index.html?path=2");
+            wxString url      = wxString::FromUTF8(get_page_base_url() + "/web/flutter_web/index.html?path=2");
             auto     real_url = wxGetApp().get_international_url(url);
 			BOOST_LOG_TRIVIAL(error) << "ExitTestDevicePage";
             m_printer_view->load_url(real_url);
@@ -2910,7 +2914,7 @@ void MainFrame::init_menubar_as_editor()
         parent_menu, wxID_ANY, _L("TestHomeDialog"), "",
         [this](wxCommandEvent&) {
 
-            wxString url      = wxString::FromUTF8(LOCALHOST_URL + std::to_string(PAGE_HTTP_PORT) + "/web/flutter_web/index.html?path=1");
+            wxString url      = wxString::FromUTF8(get_page_base_url() + "/web/flutter_web/index.html?path=1");
             auto     real_url = wxGetApp().get_international_url(url);
 			BOOST_LOG_TRIVIAL(error) << "TestHomeDialog";
             WebPreprintDialog* dialog   = new WebPreprintDialog();

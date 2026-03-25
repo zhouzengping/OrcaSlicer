@@ -178,8 +178,15 @@ void WebPreprintDialog::OnError(wxWebViewEvent &event)
     case wxWEBVIEW_NAV_ERR_USER_CANCELLED: e = "wxWEBVIEW_NAV_ERR_USER_CANCELLED"; break;
     case wxWEBVIEW_NAV_ERR_OTHER: e = "wxWEBVIEW_NAV_ERR_OTHER"; break;
     }
-
-    BOOST_LOG_TRIVIAL(fatal) << __FUNCTION__<< boost::format(":WebPreprintDialog error loading page %1% %2% %3% %4%") % event.GetURL() % event.GetTarget() %e % event.GetString();
+    std::string errorMsg = e;
+    BOOST_LOG_TRIVIAL(error) << __FUNCTION__<< boost::format(":WebPreprintDialog error loading page %1% %2% %3% %4%") % event.GetURL() % event.GetTarget() %e % event.GetString();
+    if (errorMsg == event.GetString())
+    {
+        BOOST_LOG_TRIVIAL(error) << "WebPreprintDialog stop load and veto";
+        m_browser->Stop();
+        event.Veto();
+        return;
+    }
     event.Skip();
 }
 
