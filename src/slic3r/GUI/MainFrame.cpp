@@ -50,6 +50,7 @@
 #include "../Utils/MacDarkMode.hpp"
 
 #include <fstream>
+#include <string>
 #include <string_view>
 #include <iomanip>
 #include <sstream>
@@ -79,6 +80,16 @@
 
 #define UPDATE_BUSER    true
 #define UPDATE_BUAUTO   false
+
+namespace {
+
+// Runtime base URL for the embedded page HTTP server (port may differ from PAGE_HTTP_PORT).
+inline std::string mainframe_page_http_base_url()
+{
+    return std::string(LOCALHOST_URL) + std::to_string(wxGetApp().m_page_http_server.get_port());
+}
+
+} // namespace
 
 namespace Slic3r {
 namespace GUI {
@@ -2830,15 +2841,11 @@ void MainFrame::init_menubar_as_editor()
         },
         "", nullptr, []() { return true; }, this, 1);
 
-    auto get_page_base_url = []() {
-        return std::string(LOCALHOST_URL) + std::to_string(wxGetApp().m_page_http_server.get_port());
-    };
-
     append_menu_item(
         parent_menu, wxID_ANY, _L("TestHomePage"), "",
         [this](wxCommandEvent&) {
 			BOOST_LOG_TRIVIAL(error) << "TestHomePage";
-            wxString url      = wxString::FromUTF8(get_page_base_url() + "/web/flutter_web/index.html?path=/");
+            wxString url      = wxString::FromUTF8(mainframe_page_http_base_url() + "/web/flutter_web/index.html?path=/");
             m_webview->load_url(url);            
         },
         "", nullptr, []() { return true; }, this);
@@ -2846,7 +2853,7 @@ void MainFrame::init_menubar_as_editor()
     append_menu_item(
         parent_menu, wxID_ANY, _L("ExitTestHomePage"), "",
         [this](wxCommandEvent&) {
-            wxString url      = wxString::FromUTF8(get_page_base_url() + "/web/flutter_web/index.html?path=1");
+            wxString url      = wxString::FromUTF8(mainframe_page_http_base_url() + "/web/flutter_web/index.html?path=1");
             auto     real_url = wxGetApp().get_international_url(url);
             BOOST_LOG_TRIVIAL(error) << "ExitTestHomePage";
             m_webview->load_url(real_url);
@@ -2881,8 +2888,8 @@ void MainFrame::init_menubar_as_editor()
 
         flush_logs();
         // Rebuild URLs with the runtime HTTP server port, so reload won't keep stale port.
-        wxString home_url = wxString::FromUTF8(get_page_base_url() + "/web/flutter_web/index.html?path=1");
-        wxString device_url = wxString::FromUTF8(get_page_base_url() + "/web/flutter_web/index.html?path=2");
+        wxString home_url = wxString::FromUTF8(mainframe_page_http_base_url() + "/web/flutter_web/index.html?path=1");
+        wxString device_url = wxString::FromUTF8(mainframe_page_http_base_url() + "/web/flutter_web/index.html?path=2");
         wxString real_home_url = wxGetApp().get_international_url(home_url);
         wxString real_device_url = wxGetApp().get_international_url(device_url);
         m_webview->load_url(real_home_url);
@@ -2909,7 +2916,7 @@ void MainFrame::init_menubar_as_editor()
 
     append_menu_item(parent_menu, wxID_ANY, _L("ExitTestDevicePage"), "",
             [this](wxCommandEvent&) {
-            wxString url      = wxString::FromUTF8(get_page_base_url() + "/web/flutter_web/index.html?path=2");
+            wxString url      = wxString::FromUTF8(mainframe_page_http_base_url() + "/web/flutter_web/index.html?path=2");
             auto     real_url = wxGetApp().get_international_url(url);
 			BOOST_LOG_TRIVIAL(error) << "ExitTestDevicePage";
             m_printer_view->load_url(real_url);
@@ -2919,7 +2926,7 @@ void MainFrame::init_menubar_as_editor()
         parent_menu, wxID_ANY, _L("TestHomeDialog"), "",
         [this](wxCommandEvent&) {
 
-            wxString url      = wxString::FromUTF8(get_page_base_url() + "/web/flutter_web/index.html?path=1");
+            wxString url      = wxString::FromUTF8(mainframe_page_http_base_url() + "/web/flutter_web/index.html?path=1");
             auto     real_url = wxGetApp().get_international_url(url);
 			BOOST_LOG_TRIVIAL(error) << "TestHomeDialog";
             WebPreprintDialog* dialog   = new WebPreprintDialog();
