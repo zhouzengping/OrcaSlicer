@@ -2911,7 +2911,7 @@ void MainFrame::init_menubar_as_editor()
             auto     real_url = wxGetApp().get_international_url(url);
 
             WebPreprintDialog* dialog   = new WebPreprintDialog();
-            dialog->load(real_url);
+            dialog->load_url(real_url);
             dialog->ShowModal();
 
             delete dialog;
