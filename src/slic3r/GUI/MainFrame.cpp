@@ -2948,7 +2948,7 @@ void MainFrame::init_menubar_as_editor()
                           viewport: window.innerWidth + 'x' + window.innerHeight,
                           visibilityState: document.visibilityState,
                           rootDisplay: rootStyle.display,
-                          rootVisibility: rootVisibility,
+                          rootVisibility:  rootStyle.visibility,
                           note: '已尝试强制 body 为可见',
                         };
                         if (document.body) {
