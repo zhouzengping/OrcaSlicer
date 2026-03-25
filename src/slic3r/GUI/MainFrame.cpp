@@ -2904,7 +2904,7 @@ void MainFrame::init_menubar_as_editor()
         }, "", nullptr, []() { return true; }, this);
 
     append_menu_item(
-        parent_menu, wxID_ANY, _L("TestDevicePage"), "",
+        parent_menu, wxID_ANY, _L("TestHomeDialog"), "",
         [this](wxCommandEvent&) {
 
             wxString url      = wxString::FromUTF8(LOCALHOST_URL + std::to_string(PAGE_HTTP_PORT) + "/web/flutter_web/index.html?path=1");
