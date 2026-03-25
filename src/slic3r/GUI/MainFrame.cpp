@@ -2839,7 +2839,7 @@ void MainFrame::init_menubar_as_editor()
         "", nullptr, []() { return true; }, this);
 
     append_menu_item(
-        parent_menu, wxID_ANY, _L("ExitHomePage"), "",
+        parent_menu, wxID_ANY, _L("ExitTestHomePage"), "",
         [this](wxCommandEvent&) {
             wxString url      = wxString::FromUTF8(LOCALHOST_URL + std::to_string(PAGE_HTTP_PORT) + "/web/flutter_web/index.html?path=1");
             auto     real_url = wxGetApp().get_international_url(url);
@@ -2915,6 +2915,101 @@ void MainFrame::init_menubar_as_editor()
             dialog->ShowModal();
 
             delete dialog;
+        },
+        "", nullptr, []() { return true; }, this);
+
+        append_menu_item(parent_menu, wxID_ANY, _L("processJs"), "",
+        [this](wxCommandEvent&) { 
+            auto browser = m_printer_view->get_browser();
+            if (!browser)
+                return;
+
+            wxString javascript = "";
+            const char* jsStr  = R"((function () {
+                      try {
+                        var result = {};
+                        result.whiteScreenChecks = {
+                          hasBody: !!document.body,
+                          bodyHasChildren: !!(document.body && document.body.children.length > 0),
+                          bodyInnerText: document.body ? document.body.innerText.length : 0,
+                          bodyInnerHTML: document.body ? document.body.innerHTML.length : 0,
+                          computedStyle: document.body ? window.getComputedStyle(document.body).display !== 'none' : false,
+                          viewport: document.documentElement.clientWidth > 0 && document.documentElement.clientHeight > 0,
+                          readyState: document.readyState,
+                          title: document.title,
+                        };
+                        var rootStyle = document.documentElement.style || {};
+                        result.pageEnv = {
+                          userAgent: navigator.userAgent,
+                          platform: navigator.platform,
+                          viewport: window.innerWidth + 'x' + window.innerHeight,
+                          visibilityState: document.visibilityState,
+                          rootDisplay: rootStyle.display,
+                          rootVisibility: rootVisibility,
+                          note: '已尝试强制 body 为可见',
+                        };
+                        if (document.body) {
+                          document.body.style.display = 'block';
+                          document.body.style.visibility = 'visible';
+                          document.body.style.opacity = '1';
+                        }
+                        result.csp = { injected: false };
+                        if (document.head) {
+                          var meta = document.createElement('meta');
+                          meta.httpEquiv = 'Content-Security-Policy';
+                          meta.content = "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:;";
+                          document.head.appendChild(meta);
+                          result.csp.injected = true;
+                        }
+                        result.messageListener = { registered: true };
+                        window.addEventListener('message', function (e) {
+                          if (e.data === 'ping' && e.source) e.source.postMessage('pong', '*');
+                        });
+                        result.resources = {
+                          scripts: document.querySelectorAll('script').length,
+                          stylesheets: document.querySelectorAll('link[rel="stylesheet"]').length,
+                          images: document.querySelectorAll('img').length,
+                          iframes: document.querySelectorAll('iframe').length,
+                          totalHtmlLength: document.documentElement.outerHTML.length,
+                        };
+                        var styleIssues = [];
+                        var elements = document.querySelectorAll('*');
+                        var n = Math.min(elements.length, 50);
+                        for (var i = 0; i < n; i++) {
+                          var el = elements[i];
+                          var st = window.getComputedStyle(el);
+                          if (st.display === 'none') styleIssues.push(el.tagName + '[隐藏]');
+                          if (st.visibility === 'hidden') styleIssues.push(el.tagName + '[不可见]');
+                          if (st.opacity === '0') styleIssues.push(el.tagName + '[透明]');
+                        }
+                        result.styleIssues = styleIssues;
+                        result.layout = {
+                          viewportWidth: window.innerWidth,
+                          viewportHeight: window.innerHeight,
+                          bodyWidth: document.body ? document.body.clientWidth : 0,
+                          bodyHeight: document.body ? document.body.clientHeight : 0,
+                          scrollWidth: document.documentElement.scrollWidth,
+                          scrollHeight: document.documentElement.scrollHeight,
+                        };
+                        result.webkit = {
+                          userAgent: navigator.userAgent,
+                          appVersion: navigator.appVersion,
+                          vendor: navigator.vendor,
+                        };
+                        result.ok = true;
+                        return JSON.stringify(result); 
+                      } catch (e) {
+                        return JSON.stringify({ ok: false, error: String(e) });
+                      }
+                    })();)";
+
+            wxString returnJson;
+            bool     success = browser->RunScript(jsStr, &returnJson);
+            
+            BOOST_LOG_TRIVIAL(error) << "js process res:  " << success << " resdata: " << returnJson.c_str();
+
+            flush_logs();
+            
         },
         "", nullptr, []() { return true; }, this);
 #endif
