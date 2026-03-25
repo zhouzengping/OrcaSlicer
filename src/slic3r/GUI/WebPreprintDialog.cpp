@@ -147,13 +147,13 @@ void WebPreprintDialog::RunScript(const wxString &javascript)
 
 void WebPreprintDialog::OnNavigationRequest(wxWebViewEvent &evt)
 {
-    BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << "start to load resource";
+    BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << "WebPreprintDialog start to load resource";
     evt.Skip();
 }
 
 void WebPreprintDialog::OnNavigationComplete(wxWebViewEvent &evt)
 {
-    BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << "end to load resource";
+    BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << "WebPreprintDialog end to load resource";
     m_browser->Show();
     Layout();
     evt.Skip();
@@ -161,7 +161,7 @@ void WebPreprintDialog::OnNavigationComplete(wxWebViewEvent &evt)
 
 void WebPreprintDialog::OnDocumentLoaded(wxWebViewEvent &evt)
 {
-    BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << "load resource finished";
+    BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << "WebPreprintDialog load resource finished";
     evt.Skip();
 }
 

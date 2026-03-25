@@ -180,13 +180,13 @@ void PrinterWebView::SendAPIKey()
 }
 void PrinterWebView::OnNavigating(wxWebViewEvent& evt) 
 {
-    BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << "start to load resource";
+    BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << "PrinterWebView start to load resource";
     evt.Skip();
 }
 
 void PrinterWebView::OnNavigated(wxWebViewEvent& evt)
 {
-    BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << "end to load resource";
+    BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << "PrinterWebView end to load resource";
     evt.Skip();
 }
 
@@ -229,7 +229,7 @@ void PrinterWebView::OnLoaded(wxWebViewEvent &evt)
         return;
     SendAPIKey();
 
-    BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << "load resource finished";
+    BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << "PrinterWebView load resource finished";
 
     evt.Skip();
 }
