@@ -94,6 +94,8 @@ void PrinterWebView::reload()
 
 void PrinterWebView::rebuild_browser()
 {
+    if (m_browser)
+        BOOST_LOG_TRIVIAL(error) << "1 PrinterWebView webview address:" << &m_browser;
     wxString restore_url;
     const wxString restore_key = m_apikey;
     if (m_browser)
@@ -102,7 +104,7 @@ void PrinterWebView::rebuild_browser()
         wxString url = wxString::FromUTF8(LOCALHOST_URL + std::to_string(PAGE_HTTP_PORT) + "/web/flutter_web/index.html?path=2");
         restore_url = wxGetApp().get_international_url(url);
     }
-
+    
     if (m_browser) {
         SSWCP::on_webview_delete(m_browser);
         wxGetApp().fltviews().remove_printer_view(this);
@@ -117,7 +119,8 @@ void PrinterWebView::rebuild_browser()
         wxLogError("Could not rebuild m_browser");
         return;
     }
-
+    if (m_browser)
+        BOOST_LOG_TRIVIAL(error) << "2 PrinterWebView webview address:" << &m_browser;
     m_browser->Bind(wxEVT_WEBVIEW_NAVIGATING, &PrinterWebView::OnNavigating, this);
     m_browser->Bind(wxEVT_WEBVIEW_NAVIGATED, &PrinterWebView::OnNavigated, this);
     m_browser->Bind(wxEVT_WEBVIEW_ERROR, &PrinterWebView::OnError, this);

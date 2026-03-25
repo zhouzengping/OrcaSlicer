@@ -2833,6 +2833,7 @@ void MainFrame::init_menubar_as_editor()
     append_menu_item(
         parent_menu, wxID_ANY, _L("TestHomePage"), "",
         [this](wxCommandEvent&) {
+			BOOST_LOG_TRIVIAL(error) << "TestHomePage";
             wxString url      = wxString::FromUTF8(LOCALHOST_URL + std::to_string(PAGE_HTTP_PORT) + "/web/flutter_web/index.html?path=/");
             m_webview->load_url(url);            
         },
@@ -2843,7 +2844,7 @@ void MainFrame::init_menubar_as_editor()
         [this](wxCommandEvent&) {
             wxString url      = wxString::FromUTF8(LOCALHOST_URL + std::to_string(PAGE_HTTP_PORT) + "/web/flutter_web/index.html?path=1");
             auto     real_url = wxGetApp().get_international_url(url);
-
+            BOOST_LOG_TRIVIAL(error) << "ExitTestHomePage";
             m_webview->load_url(real_url);
         },
         "", nullptr, []() { return true; }, this);
@@ -2851,7 +2852,7 @@ void MainFrame::init_menubar_as_editor()
     append_menu_item(
         parent_menu, wxID_ANY, _L("ReloadHomeAndDevicePage"), "",
         [this](wxCommandEvent&) {
-            
+            BOOST_LOG_TRIVIAL(error) << "ReloadHomeAndDevicePage";
             #ifdef __WXMAC__
             BOOST_LOG_TRIVIAL(error) << "net check";
             system("networksetup -listallnetworkservices 2>&1");
@@ -2881,8 +2882,9 @@ void MainFrame::init_menubar_as_editor()
     "", nullptr, []() { return true; }, this);
 
     append_menu_item(
-        parent_menu, wxID_ANY, _L("Rebuild Device WebView"), _L("Delete and recreate the device page browser (U1 / path=2)"),
+        parent_menu, wxID_ANY, _L("RebuildDeviceWebView"), _L("Delete and recreate the device page browser (U1 / path=2)"),
         [this](wxCommandEvent &) {
+            BOOST_LOG_TRIVIAL(error) << "RebuildDeviceWebView";
             if (m_printer_view)
                 m_printer_view->rebuild_browser();
         },
@@ -2891,6 +2893,7 @@ void MainFrame::init_menubar_as_editor()
     append_menu_item(parent_menu, wxID_ANY, _L("TestDevicePage"), "",
         [this](wxCommandEvent&) {
             wxString url ="https://github.com/Snapmaker/";
+			BOOST_LOG_TRIVIAL(error) << "TestDevicePage";
             m_printer_view->load_url(url);
         },
         "", nullptr, []() { return true; }, this);
@@ -2899,7 +2902,7 @@ void MainFrame::init_menubar_as_editor()
             [this](wxCommandEvent&) {
             wxString url      = wxString::FromUTF8(LOCALHOST_URL + std::to_string(PAGE_HTTP_PORT) + "/web/flutter_web/index.html?path=2");
             auto     real_url = wxGetApp().get_international_url(url);
-
+			BOOST_LOG_TRIVIAL(error) << "ExitTestDevicePage";
             m_printer_view->load_url(real_url);
         }, "", nullptr, []() { return true; }, this);
 
@@ -2909,7 +2912,7 @@ void MainFrame::init_menubar_as_editor()
 
             wxString url      = wxString::FromUTF8(LOCALHOST_URL + std::to_string(PAGE_HTTP_PORT) + "/web/flutter_web/index.html?path=1");
             auto     real_url = wxGetApp().get_international_url(url);
-
+			BOOST_LOG_TRIVIAL(error) << "TestHomeDialog";
             WebPreprintDialog* dialog   = new WebPreprintDialog();
             dialog->load_url(real_url);
             dialog->ShowModal();
