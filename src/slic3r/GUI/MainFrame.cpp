@@ -2850,7 +2850,31 @@ void MainFrame::init_menubar_as_editor()
 
     append_menu_item(
         parent_menu, wxID_ANY, _L("ReloadHomeAndDevicePage"), "",
-        [this](wxCommandEvent&) { 
+        [this](wxCommandEvent&) {
+            
+            #ifdef __WXMAC__
+            BOOST_LOG_TRIVIAL(error) << "net check";
+            system("networksetup -listallnetworkservices 2>&1");
+            
+            // 2. check filesystem
+            BOOST_LOG_TRIVIAL(error) << "file system check";
+            wxString homeDir = wxGetHomeDir();
+            if (wxDirExists(homeDir)) {
+                BOOST_LOG_TRIVIAL(error) << "can vist the home dir";
+            } else {
+                BOOST_LOG_TRIVIAL(fatal) << "can't vist the home dir";
+            }
+            
+            BOOST_LOG_TRIVIAL(error) << "check sanbox status";
+            if (wxGetEnv("APP_SANDBOX_CONTAINER_ID", nullptr)) {
+                BOOST_LOG_TRIVIAL(error) << "app work in sanbox";
+            } else {
+                
+                BOOST_LOG_TRIVIAL(error) << "app doesn't work in sanbox";
+            }
+            #endif
+
+        flush_logs();
         m_webview->reload();
         m_printer_view->reload();
     },
