@@ -92,6 +92,49 @@ void PrinterWebView::reload()
     m_browser->Reload();
 }
 
+void PrinterWebView::rebuild_browser()
+{
+    wxString restore_url;
+    const wxString restore_key = m_apikey;
+    if (m_browser)
+        restore_url = m_browser->GetCurrentURL();
+    if (restore_url.IsEmpty()) {
+        wxString url = wxString::FromUTF8(LOCALHOST_URL + std::to_string(PAGE_HTTP_PORT) + "/web/flutter_web/index.html?path=2");
+        restore_url = wxGetApp().get_international_url(url);
+    }
+
+    if (m_browser) {
+        SSWCP::on_webview_delete(m_browser);
+        wxGetApp().fltviews().remove_printer_view(this);
+        if (wxSizer *sz = GetSizer())
+            sz->Detach(m_browser);
+        m_browser->Destroy();
+        m_browser = nullptr;
+    }
+
+    m_browser = WebView::CreateWebView(this, wxString());
+    if (m_browser == nullptr) {
+        wxLogError("Could not rebuild m_browser");
+        return;
+    }
+
+    m_browser->Bind(wxEVT_WEBVIEW_NAVIGATING, &PrinterWebView::OnNavigating, this);
+    m_browser->Bind(wxEVT_WEBVIEW_NAVIGATED, &PrinterWebView::OnNavigated, this);
+    m_browser->Bind(wxEVT_WEBVIEW_ERROR, &PrinterWebView::OnError, this);
+    m_browser->Bind(wxEVT_WEBVIEW_LOADED, &PrinterWebView::OnLoaded, this);
+    m_browser->Bind(wxEVT_WEBVIEW_SCRIPT_MESSAGE_RECEIVED, &PrinterWebView::OnScriptMessage, this, m_browser->GetId());
+
+    if (wxSizer *sz = GetSizer())
+        sz->Add(m_browser, 1, wxEXPAND, 0);
+
+    update_mode();
+    m_zoomFactor = 100;
+
+    wxString load_u = restore_url;
+    load_url(load_u, restore_key);
+    Layout();
+}
+
 bool PrinterWebView::isSnapmakerPage()
 {
     auto url = m_browser->GetCurrentURL();

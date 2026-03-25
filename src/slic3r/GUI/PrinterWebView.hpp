@@ -44,6 +44,8 @@ public:
     void OnLoaded(wxWebViewEvent& evt);
     void OnScriptMessage(wxWebViewEvent& evt);
     void reload();
+    /// Destroy the embedded wxWebView and create a new one (macOS menu / recovery).
+    void rebuild_browser();
     void update_mode();
     bool isSnapmakerPage();
     void sendMessage(const std::string& msg);

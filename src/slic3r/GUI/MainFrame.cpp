@@ -2856,6 +2856,14 @@ void MainFrame::init_menubar_as_editor()
     },
     "", nullptr, []() { return true; }, this);
 
+    append_menu_item(
+        parent_menu, wxID_ANY, _L("Rebuild Device WebView"), _L("Delete and recreate the device page browser (U1 / path=2)"),
+        [this](wxCommandEvent &) {
+            if (m_printer_view)
+                m_printer_view->rebuild_browser();
+        },
+        "", nullptr, []() { return true; }, this);
+
     append_menu_item(parent_menu, wxID_ANY, _L("TestDevicePage"), "",
         [this](wxCommandEvent&) {
             wxString url ="https://github.com/Snapmaker/";
