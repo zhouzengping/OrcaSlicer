@@ -38,10 +38,14 @@ public:
 
     void load_url(wxString& url, wxString apikey = "");
     void OnClose(wxCloseEvent& evt);
+    void OnNavigating(wxWebViewEvent& evt);
+    void OnNavigated(wxWebViewEvent& evt);
     void OnError(wxWebViewEvent& evt);
     void OnLoaded(wxWebViewEvent& evt);
     void OnScriptMessage(wxWebViewEvent& evt);
     void reload();
+    /// Destroy the embedded wxWebView and create a new one (macOS menu / recovery).
+    void rebuild_browser();
     void update_mode();
     bool isSnapmakerPage();
     void sendMessage(const std::string& msg);

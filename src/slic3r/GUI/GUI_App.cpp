@@ -1107,6 +1107,12 @@ void GUI_App::shutdown(bool isRecreate)
         sm_login_dlg = nullptr;
     }
 
+    if (web_device_dialog != nullptr) {
+        BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << boost::format(": web device dialog");
+        delete web_device_dialog;
+        web_device_dialog = nullptr;
+    }
+
     if (web_preprint_dialog != nullptr) {
         BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << boost::format(": web preprint dialog");
         delete web_preprint_dialog;
@@ -1993,8 +1999,8 @@ void GUI_App::init_app_config()
                 set_data_dir((dir + "/" + GetAppName()).ToUTF8().data());
                 data_dir_path = boost::filesystem::path(data_dir());
             #endif
-            if (!boost::filesystem::exists(data_dir_path)){
-                boost::filesystem::create_directory(data_dir_path);
+            if (!boost::filesystem::exists(data_dir_path)) {
+                boost::filesystem::create_directories(data_dir_path);
             }
         }
 
@@ -2065,6 +2071,11 @@ void GUI_App::copy_web_resources() {
     if (!boost::filesystem::exists(data_web_path / "flutter_web")) {
         auto source_path = boost::filesystem::path(resources_dir()) / "web" / "flutter_web";
         auto target_path = data_web_path / "flutter_web";
+        if (!boost::filesystem::exists(source_path) || !boost::filesystem::is_directory(source_path)) {
+            BOOST_LOG_TRIVIAL(error) << "copy_web_resources: bundled flutter_web missing at " << source_path.string()
+                                     << " (data dir ok; check .app Resources or install layout)";
+            return;
+        }
         copy_directory_recursively(source_path, target_path);
     } else {
         auto source_version_file = boost::filesystem::path(resources_dir()) / "web" / "flutter_web" / "version.json";

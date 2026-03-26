@@ -50,6 +50,7 @@
 #include "../Utils/MacDarkMode.hpp"
 
 #include <fstream>
+#include <string>
 #include <string_view>
 #include <iomanip>
 #include <sstream>
@@ -79,6 +80,16 @@
 
 #define UPDATE_BUSER    true
 #define UPDATE_BUAUTO   false
+
+namespace {
+
+// Runtime base URL for the embedded page HTTP server (port may differ from PAGE_HTTP_PORT).
+inline std::string mainframe_page_http_base_url()
+{
+    return std::string(LOCALHOST_URL) + std::to_string(wxGetApp().m_page_http_server.get_port());
+}
+
+} // namespace
 
 namespace Slic3r {
 namespace GUI {
@@ -1134,6 +1145,7 @@ void MainFrame::init_tabpanel() {
         wxString key = evt.GetAPIkey();
         m_printer_view->load_url(url, key);
     });
+    m_printer_view->Hide();
 
     if (wxGetApp().is_enable_multi_machine()) {
         m_multi_machine = new MultiMachinePage(m_tabpanel, wxID_ANY, wxDefaultPosition, wxDefaultSize);
@@ -1172,7 +1184,7 @@ void MainFrame::show_device(bool bBBLPrinter) {
             return;
         // Remove printer view
         if ((idx = m_tabpanel->FindPage(m_printer_view)) != wxNOT_FOUND) {
-            //m_printer_view->Show(false);
+            m_printer_view->Show(false);
             m_tabpanel->RemovePage(idx);
         }
 
@@ -1232,6 +1244,7 @@ void MainFrame::show_device(bool bBBLPrinter) {
                 m_printer_view->load_url(url, key);
             });
         }
+        m_printer_view->Show(false);
         m_tabpanel->InsertPage(tpMonitor, m_printer_view, _L("Device"), std::string("tab_monitor_active"),
                                std::string("tab_monitor_active"));
     }
@@ -2786,6 +2799,7 @@ void MainFrame::init_menubar_as_editor()
             },
             this, [this]() { return m_tabpanel->GetSelection() == TabPosition::tp3DEditor; },
             [this]() { return wxGetApp().show_outline(); }, this);
+
         /*viewMenu->AppendSeparator();
         append_menu_check_item(viewMenu, wxID_ANY, _L("Show &Wireframe") + "\t" + ctrl + shift + _L("Enter"), _L("Show wireframes in 3D scene."),
             [this](wxCommandEvent&) { m_plater->toggle_show_wireframe(); m_plater->get_current_canvas3D()->post_event(SimpleEvent(wxEVT_PAINT)); }, this,
@@ -2826,30 +2840,197 @@ void MainFrame::init_menubar_as_editor()
                 plater()->refresh_print();
         },
         "", nullptr, []() { return true; }, this, 1);
-      
+
+    append_menu_item(
+        parent_menu, wxID_ANY, _L("TestHomePage"), "",
+        [this](wxCommandEvent&) {
+			BOOST_LOG_TRIVIAL(error) << "TestHomePage";
+            wxString url      = wxString::FromUTF8(mainframe_page_http_base_url() + "/web/flutter_web/index.html?path=/");
+            m_webview->load_url(url);            
+        },
+        "", nullptr, []() { return true; }, this);
+
+    append_menu_item(
+        parent_menu, wxID_ANY, _L("ExitTestHomePage"), "",
+        [this](wxCommandEvent&) {
+            wxString url      = wxString::FromUTF8(mainframe_page_http_base_url() + "/web/flutter_web/index.html?path=1");
+            auto     real_url = wxGetApp().get_international_url(url);
+            BOOST_LOG_TRIVIAL(error) << "ExitTestHomePage";
+            m_webview->load_url(real_url);
+        },
+        "", nullptr, []() { return true; }, this);
+
     append_menu_item(
         parent_menu, wxID_ANY, _L("ReloadHomeAndDevicePage"), "",
-        [this](wxCommandEvent&) { 
-        m_webview->reload();
-        m_printer_view->reload();
+        [this](wxCommandEvent&) {
+            BOOST_LOG_TRIVIAL(error) << "ReloadHomeAndDevicePage";
+            #ifdef __WXMAC__
+            BOOST_LOG_TRIVIAL(error) << "net check";
+            system("networksetup -listallnetworkservices 2>&1");
+            
+            // 2. check filesystem
+            BOOST_LOG_TRIVIAL(error) << "file system check";
+            wxString homeDir = wxGetHomeDir();
+            if (wxDirExists(homeDir)) {
+                BOOST_LOG_TRIVIAL(error) << "can vist the home dir";
+            } else {
+                BOOST_LOG_TRIVIAL(fatal) << "can't vist the home dir";
+            }
+            
+            BOOST_LOG_TRIVIAL(error) << "check sanbox status";
+            if (wxGetEnv("APP_SANDBOX_CONTAINER_ID", nullptr)) {
+                BOOST_LOG_TRIVIAL(error) << "app work in sanbox";
+            } else {
+                
+                BOOST_LOG_TRIVIAL(error) << "app doesn't work in sanbox";
+            }
+            #endif
+
+        flush_logs();
+        // Rebuild URLs with the runtime HTTP server port, so reload won't keep stale port.
+        wxString home_url = wxString::FromUTF8(mainframe_page_http_base_url() + "/web/flutter_web/index.html?path=1");
+        wxString device_url = wxString::FromUTF8(mainframe_page_http_base_url() + "/web/flutter_web/index.html?path=2");
+        wxString real_home_url = wxGetApp().get_international_url(home_url);
+        wxString real_device_url = wxGetApp().get_international_url(device_url);
+        m_webview->load_url(real_home_url);
+        m_printer_view->load_url(real_device_url);
     },
     "", nullptr, []() { return true; }, this);
+
+    append_menu_item(
+        parent_menu, wxID_ANY, _L("RebuildDeviceWebView"), _L("Delete and recreate the device page browser (U1 / path=2)"),
+        [this](wxCommandEvent &) {
+            BOOST_LOG_TRIVIAL(error) << "RebuildDeviceWebView";
+            if (m_printer_view)
+                m_printer_view->rebuild_browser();
+        },
+        "", nullptr, []() { return true; }, this);
 
     append_menu_item(parent_menu, wxID_ANY, _L("TestDevicePage"), "",
         [this](wxCommandEvent&) {
             wxString url ="https://github.com/Snapmaker/";
+			BOOST_LOG_TRIVIAL(error) << "TestDevicePage";
             m_printer_view->load_url(url);
         },
         "", nullptr, []() { return true; }, this);
 
     append_menu_item(parent_menu, wxID_ANY, _L("ExitTestDevicePage"), "",
             [this](wxCommandEvent&) {
-            wxString url      = wxString::FromUTF8(LOCALHOST_URL + std::to_string(PAGE_HTTP_PORT) + "/web/flutter_web/index.html?path=2");
+            wxString url      = wxString::FromUTF8(mainframe_page_http_base_url() + "/web/flutter_web/index.html?path=2");
             auto     real_url = wxGetApp().get_international_url(url);
-
+			BOOST_LOG_TRIVIAL(error) << "ExitTestDevicePage";
             m_printer_view->load_url(real_url);
         }, "", nullptr, []() { return true; }, this);
-    //parent_menu->Insert(1, preference_item);
+
+    append_menu_item(
+        parent_menu, wxID_ANY, _L("TestHomeDialog"), "",
+        [this](wxCommandEvent&) {
+
+            wxString url      = wxString::FromUTF8(mainframe_page_http_base_url() + "/web/flutter_web/index.html?path=1");
+            auto     real_url = wxGetApp().get_international_url(url);
+			BOOST_LOG_TRIVIAL(error) << "TestHomeDialog";
+            WebPreprintDialog* dialog   = new WebPreprintDialog();
+            dialog->load_url(real_url);
+            dialog->ShowModal();
+
+            delete dialog;
+        },
+        "", nullptr, []() { return true; }, this);
+
+        append_menu_item(parent_menu, wxID_ANY, _L("processJs"), "",
+        [this](wxCommandEvent&) { 
+            auto browser = m_printer_view->get_browser();
+            if (!browser)
+                return;
+
+            wxString javascript = "";
+            const char* jsStr  = R"((function () {
+                      try {
+                        var result = {};
+                        result.whiteScreenChecks = {
+                          hasBody: !!document.body,
+                          bodyHasChildren: !!(document.body && document.body.children.length > 0),
+                          bodyInnerText: document.body ? document.body.innerText.length : 0,
+                          bodyInnerHTML: document.body ? document.body.innerHTML.length : 0,
+                          computedStyle: document.body ? window.getComputedStyle(document.body).display !== 'none' : false,
+                          viewport: document.documentElement.clientWidth > 0 && document.documentElement.clientHeight > 0,
+                          readyState: document.readyState,
+                          title: document.title,
+                        };
+                        var rootStyle = document.documentElement.style || {};
+                        result.pageEnv = {
+                          userAgent: navigator.userAgent,
+                          platform: navigator.platform,
+                          viewport: window.innerWidth + 'x' + window.innerHeight,
+                          visibilityState: document.visibilityState,
+                          rootDisplay: rootStyle.display,
+                          rootVisibility:  rootStyle.visibility,
+                          note: '已尝试强制 body 为可见',
+                        };
+                        if (document.body) {
+                          document.body.style.display = 'block';
+                          document.body.style.visibility = 'visible';
+                          document.body.style.opacity = '1';
+                        }
+                        result.csp = { injected: false };
+                        if (document.head) {
+                          var meta = document.createElement('meta');
+                          meta.httpEquiv = 'Content-Security-Policy';
+                          meta.content = "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:;";
+                          document.head.appendChild(meta);
+                          result.csp.injected = true;
+                        }
+                        result.messageListener = { registered: true };
+                        window.addEventListener('message', function (e) {
+                          if (e.data === 'ping' && e.source) e.source.postMessage('pong', '*');
+                        });
+                        result.resources = {
+                          scripts: document.querySelectorAll('script').length,
+                          stylesheets: document.querySelectorAll('link[rel="stylesheet"]').length,
+                          images: document.querySelectorAll('img').length,
+                          iframes: document.querySelectorAll('iframe').length,
+                          totalHtmlLength: document.documentElement.outerHTML.length,
+                        };
+                        var styleIssues = [];
+                        var elements = document.querySelectorAll('*');
+                        var n = Math.min(elements.length, 50);
+                        for (var i = 0; i < n; i++) {
+                          var el = elements[i];
+                          var st = window.getComputedStyle(el);
+                          if (st.display === 'none') styleIssues.push(el.tagName + '[隐藏]');
+                          if (st.visibility === 'hidden') styleIssues.push(el.tagName + '[不可见]');
+                          if (st.opacity === '0') styleIssues.push(el.tagName + '[透明]');
+                        }
+                        result.styleIssues = styleIssues;
+                        result.layout = {
+                          viewportWidth: window.innerWidth,
+                          viewportHeight: window.innerHeight,
+                          bodyWidth: document.body ? document.body.clientWidth : 0,
+                          bodyHeight: document.body ? document.body.clientHeight : 0,
+                          scrollWidth: document.documentElement.scrollWidth,
+                          scrollHeight: document.documentElement.scrollHeight,
+                        };
+                        result.webkit = {
+                          userAgent: navigator.userAgent,
+                          appVersion: navigator.appVersion,
+                          vendor: navigator.vendor,
+                        };
+                        result.ok = true;
+                        return JSON.stringify(result); 
+                      } catch (e) {
+                        return JSON.stringify({ ok: false, error: String(e) });
+                      }
+                    })();)";
+
+            wxString returnJson;
+            bool     success = browser->RunScript(jsStr, &returnJson);
+            
+            BOOST_LOG_TRIVIAL(error) << "js process res:  " << success << " resdata: " << returnJson.c_str();
+
+            flush_logs();
+            
+        },
+        "", nullptr, []() { return true; }, this);
 #endif
     // Help menu
     auto helpMenu = generate_help_menu();

@@ -487,7 +487,7 @@ void HttpServer::start_health_check()
                 BOOST_LOG_TRIVIAL(debug) << "HTTP server health check passed";
             }
         }
-        BOOST_LOG_TRIVIAL(error) << "Health check thread stopped";
+        BOOST_LOG_TRIVIAL(debug) << "Health check thread stopped";
     });
 }
 
@@ -498,7 +498,7 @@ void HttpServer::stop_health_check()
         std::lock_guard<std::mutex> lock(m_health_check_mutex);
         
         if (!m_health_check_enabled) {
-            BOOST_LOG_TRIVIAL(error) << "Health check is not running";
+            BOOST_LOG_TRIVIAL(debug) << "Health check is not running";
             return;
         }
         
@@ -752,6 +752,10 @@ std::string HttpServer::map_url_to_file_path(const std::string& url)
     if (!boost::filesystem::exists(data_web_path / "flutter_web")) {
         auto source_path = boost::filesystem::path(resources_dir()) / "web" / "flutter_web";
         auto target_path = data_web_path / "flutter_web";
+        if (!boost::filesystem::exists(source_path) || !boost::filesystem::is_directory(source_path)) {
+            BOOST_LOG_TRIVIAL(error) << "map_url_to_file_path: flutter_web source missing at " << source_path.string();
+            return "";
+        }
         copy_directory_recursively(source_path, target_path);
     }
 

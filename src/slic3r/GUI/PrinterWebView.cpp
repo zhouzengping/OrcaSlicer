@@ -37,8 +37,9 @@ PrinterWebView::PrinterWebView(wxWindow *parent)
         wxLogError("Could not init m_browser");
         return;
     }
-    BOOST_LOG_TRIVIAL(fatal) << "init and printer webview address:" << &m_browser;
-
+    
+    m_browser->Bind(wxEVT_WEBVIEW_NAVIGATING, &PrinterWebView::OnNavigating, this);
+    m_browser->Bind(wxEVT_WEBVIEW_NAVIGATED, &PrinterWebView::OnNavigated, this);
     m_browser->Bind(wxEVT_WEBVIEW_ERROR, &PrinterWebView::OnError, this);
     m_browser->Bind(wxEVT_WEBVIEW_LOADED, &PrinterWebView::OnLoaded, this);
     m_browser->Bind(wxEVT_WEBVIEW_SCRIPT_MESSAGE_RECEIVED, &PrinterWebView::OnScriptMessage, this, m_browser->GetId());
@@ -67,6 +68,7 @@ PrinterWebView::~PrinterWebView()
 }
 
 
+
 void PrinterWebView::load_url(wxString& url, wxString apikey)
 {
     if (m_browser == nullptr)
@@ -79,14 +81,63 @@ void PrinterWebView::load_url(wxString& url, wxString apikey)
     } else {
         wxGetApp().fltviews().remove_printer_view(this);
     }
-    BOOST_LOG_TRIVIAL(fatal) << "load and printer webview address:" << &m_browser;
- 
+    m_browser->Stop();
     m_browser->LoadURL(url);
+
+    m_browser->Show();
 }
 
 void PrinterWebView::reload()
+{ 
+    auto url = m_browser->GetCurrentURL();
+    load_url(url);
+    //m_browser->Reload();
+}
+
+void PrinterWebView::rebuild_browser()
 {
-    m_browser->Reload();
+    if (m_browser)
+        BOOST_LOG_TRIVIAL(error) << "1 PrinterWebView webview address:" << &m_browser;
+    wxString restore_url;
+    const wxString restore_key = m_apikey;
+    if (m_browser)
+        restore_url = m_browser->GetCurrentURL();
+    if (restore_url.IsEmpty()) {
+        wxString url = wxString::FromUTF8(LOCALHOST_URL + std::to_string(PAGE_HTTP_PORT) + "/web/flutter_web/index.html?path=2");
+        restore_url = wxGetApp().get_international_url(url);
+    }
+    
+    if (m_browser) {
+        SSWCP::on_webview_delete(m_browser);
+        wxGetApp().fltviews().remove_printer_view(this);
+        if (wxSizer *sz = GetSizer())
+            sz->Detach(m_browser);
+        m_browser->Destroy();
+        m_browser = nullptr;
+    }
+
+    m_browser = WebView::CreateWebView(this, wxString());
+    if (m_browser == nullptr) {
+        wxLogError("Could not rebuild m_browser");
+        return;
+    }
+    if (m_browser)
+        BOOST_LOG_TRIVIAL(error) << "2 PrinterWebView webview address:" << &m_browser;
+    m_browser->Bind(wxEVT_WEBVIEW_NAVIGATING, &PrinterWebView::OnNavigating, this);
+    m_browser->Bind(wxEVT_WEBVIEW_NAVIGATED, &PrinterWebView::OnNavigated, this);
+    m_browser->Bind(wxEVT_WEBVIEW_ERROR, &PrinterWebView::OnError, this);
+    m_browser->Bind(wxEVT_WEBVIEW_LOADED, &PrinterWebView::OnLoaded, this);
+    m_browser->Bind(wxEVT_WEBVIEW_SCRIPT_MESSAGE_RECEIVED, &PrinterWebView::OnScriptMessage, this, m_browser->GetId());
+
+    if (wxSizer *sz = GetSizer())
+        sz->Add(m_browser, 1, wxEXPAND, 0);
+
+    update_mode();
+    m_zoomFactor = 100;
+
+    wxString load_u = restore_url;
+    load_url(load_u, restore_key);
+    Layout();
 }
 
 bool PrinterWebView::isSnapmakerPage()
@@ -132,6 +183,17 @@ void PrinterWebView::SendAPIKey()
     m_browser->AddUserScript(script);
     m_browser->Reload();
 }
+void PrinterWebView::OnNavigating(wxWebViewEvent& evt) 
+{
+    BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << "PrinterWebView start to load resource";
+    evt.Skip();
+}
+
+void PrinterWebView::OnNavigated(wxWebViewEvent& evt)
+{
+    BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << "PrinterWebView end to load resource";
+    evt.Skip();
+}
 
 void PrinterWebView::OnError(wxWebViewEvent &evt)
 {
@@ -163,6 +225,7 @@ void PrinterWebView::OnError(wxWebViewEvent &evt)
         break;
       }
     BOOST_LOG_TRIVIAL(fatal) << __FUNCTION__<< boost::format(":PrinterWebView error loading page %1% %2% %3% %4%") %evt.GetURL() %evt.GetTarget() %e %evt.GetString();
+    evt.Skip();
 }
 
 void PrinterWebView::OnLoaded(wxWebViewEvent &evt)
@@ -170,6 +233,10 @@ void PrinterWebView::OnLoaded(wxWebViewEvent &evt)
     if (evt.GetURL().IsEmpty())
         return;
     SendAPIKey();
+
+    BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << "PrinterWebView load resource finished";
+
+    evt.Skip();
 }
 
 void PrinterWebView::OnScriptMessage(wxWebViewEvent& evt) {
@@ -180,6 +247,8 @@ void PrinterWebView::OnScriptMessage(wxWebViewEvent& evt) {
 
     // test
     SSWCP::handle_web_message(evt.GetString().ToUTF8().data(), m_browser);
+
+    evt.Skip();
 }
 
 

@@ -34,7 +34,7 @@ WebPreprintDialog::WebPreprintDialog()
         wxLogError("Could not init m_browser");
         return;
     }
-    //m_browser->Hide();
+    m_browser->Hide();
 
     // Connect the webview events
     Bind(wxEVT_WEBVIEW_NAVIGATING, &WebPreprintDialog::OnNavigationRequest, this, m_browser->GetId());
@@ -56,6 +56,12 @@ WebPreprintDialog::WebPreprintDialog()
     CenterOnParent();
 
     wxGetApp().UpdateDlgDarkUI(this);
+
+    auto ptr = wxGetApp().get_web_device_dialog();
+    if (ptr) {
+        delete ptr;
+    }
+
     wxGetApp().set_web_preprint_dialog(this);
 }
 
@@ -91,8 +97,10 @@ void WebPreprintDialog::set_gcode_file_name(const std::string& filename)
 { m_gcode_file_name = filename; }
 
 void WebPreprintDialog::reload()
-{
-    load_url(m_prePrint_url);
+{ 
+    auto url = m_browser->GetCurrentURL();
+    load_url(url);
+    //load_url(m_prePrint_url);
 }
 
 void WebPreprintDialog::RecoverWebView()
@@ -107,6 +115,7 @@ void WebPreprintDialog::load_url(wxString &url)
 {
     wxGetApp().fltviews().add_view(m_browser, url);
 
+    m_browser->Stop();
     m_browser->Show();
     m_browser->LoadURL(url);
     
@@ -141,17 +150,21 @@ void WebPreprintDialog::RunScript(const wxString &javascript)
 
 void WebPreprintDialog::OnNavigationRequest(wxWebViewEvent &evt)
 {
+    BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << "WebPreprintDialog start to load resource";
     evt.Skip();
 }
 
 void WebPreprintDialog::OnNavigationComplete(wxWebViewEvent &evt)
 {
+    BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << "WebPreprintDialog end to load resource";
     m_browser->Show();
     Layout();
+    evt.Skip();
 }
 
 void WebPreprintDialog::OnDocumentLoaded(wxWebViewEvent &evt)
 {
+    BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << "WebPreprintDialog load resource finished";
     evt.Skip();
 }
 
@@ -168,9 +181,16 @@ void WebPreprintDialog::OnError(wxWebViewEvent &event)
     case wxWEBVIEW_NAV_ERR_USER_CANCELLED: e = "wxWEBVIEW_NAV_ERR_USER_CANCELLED"; break;
     case wxWEBVIEW_NAV_ERR_OTHER: e = "wxWEBVIEW_NAV_ERR_OTHER"; break;
     }
-
-    BOOST_LOG_TRIVIAL(fatal) << __FUNCTION__<< boost::format(":WebPreprintDialog error loading page %1% %2% %3% %4%") % event.GetURL() % event.GetTarget() %e % event.GetString();
-    
+    std::string errorMsg = e;
+    BOOST_LOG_TRIVIAL(error) << __FUNCTION__<< boost::format(":WebPreprintDialog error loading page %1% %2% %3% %4%") % event.GetURL() % event.GetTarget() %e % event.GetString();
+    if (errorMsg == event.GetString())
+    {
+        BOOST_LOG_TRIVIAL(error) << "WebPreprintDialog stop load and veto";
+        m_browser->Stop();
+        event.Veto();
+        return;
+    }
+    event.Skip();
 }
 
 void WebPreprintDialog::OnScriptMessage(wxWebViewEvent &evt)
@@ -182,7 +202,7 @@ void WebPreprintDialog::OnScriptMessage(wxWebViewEvent &evt)
 
     // test
     SSWCP::handle_web_message(evt.GetString().ToUTF8().data(), m_browser);
-
+    evt.Skip();
 }
 
 void WebPreprintDialog::EndModalWithResult(int code)

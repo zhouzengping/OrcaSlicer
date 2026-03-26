@@ -240,8 +240,11 @@ WebViewPanel::~WebViewPanel()
     BOOST_LOG_TRIVIAL(trace) << __FUNCTION__ << " End";
 }
 
-void WebViewPanel::reload() {
-    m_browser->Reload();
+void WebViewPanel::reload() { 
+    auto url = m_browser->GetCurrentURL();
+    m_browser->Stop();
+    load_url(url);
+    //m_browser->Reload();
 }
 
 // Define static const member
@@ -306,12 +309,27 @@ void WebViewPanel::CheckServerAndLoadRetry()
 
 void WebViewPanel::load_url(wxString& url)
 {
+    this->Show();
+    this->Raise();
+
+    // Debug: Log before loading
+    BOOST_LOG_TRIVIAL(info) << "[WebView] load_url - Loading URL: " << url.ToUTF8().data();
+    BOOST_LOG_TRIVIAL(info) << "[WebView] load_url - HTTP Server status: "
+        << (wxGetApp().m_page_http_server.is_started() ? "RUNNING" : "NOT STARTED");
+    BOOST_LOG_TRIVIAL(info) << "[WebView] load_url - HTTP Server port: "
+        << wxGetApp().m_page_http_server.get_port();
+
+    m_browser->Stop();
     m_browser->LoadURL(url);
 
     wxGetApp().fltviews().add_webview_panel(this, url);
 
     m_browser->SetFocus();
     UpdateState();
+
+    // Debug: Log after loading
+    BOOST_LOG_TRIVIAL(info) << "[WebView] load_url - Load command sent, current URL: "
+        << m_browser->GetCurrentURL().ToUTF8().data();
 }
 
 /**
@@ -611,6 +629,7 @@ void WebViewPanel::update_mode()
     */
 void WebViewPanel::OnNavigationRequest(wxWebViewEvent& evt)
 {
+    BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << "WebViewPanel start to load resource";
     BOOST_LOG_TRIVIAL(trace) << __FUNCTION__ << ": " << evt.GetTarget().ToUTF8().data();
     const wxString &url = evt.GetURL();
     if (url.StartsWith("File://") || url.StartsWith("file://")) {
@@ -647,7 +666,9 @@ void WebViewPanel::OnNavigationRequest(wxWebViewEvent& evt)
     else
     {
         UpdateState();
+		evt.Skip();
     }
+    
 }
 
 /**
@@ -655,6 +676,7 @@ void WebViewPanel::OnNavigationRequest(wxWebViewEvent& evt)
     */
 void WebViewPanel::OnNavigationComplete(wxWebViewEvent& evt)
 {
+    BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << "WebViewPanel end to load resource";
     m_browser->Show();
     Layout();
     BOOST_LOG_TRIVIAL(trace) << __FUNCTION__ << ": " << evt.GetTarget().ToUTF8().data();
@@ -662,6 +684,8 @@ void WebViewPanel::OnNavigationComplete(wxWebViewEvent& evt)
         wxLogMessage("%s", "Navigation complete; url='" + evt.GetURL() + "'");
     UpdateState();
     ShowNetpluginTip();
+
+    evt.Skip();
 }
 
 /**
@@ -669,6 +693,7 @@ void WebViewPanel::OnNavigationComplete(wxWebViewEvent& evt)
     */
 void WebViewPanel::OnDocumentLoaded(wxWebViewEvent& evt)
 {
+    BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << "WebViewPanel load resource finished";
     BOOST_LOG_TRIVIAL(trace) << __FUNCTION__ << ": " << evt.GetTarget().ToUTF8().data();
     // Only notify if the document is the main frame, not a subframe
     if (evt.GetURL() == m_browser->GetCurrentURL())
@@ -677,12 +702,15 @@ void WebViewPanel::OnDocumentLoaded(wxWebViewEvent& evt)
             wxLogMessage("%s", "Document loaded; url='" + evt.GetURL() + "'");
     }
     UpdateState();
+
+    evt.Skip();
 }
 
 void WebViewPanel::OnTitleChanged(wxWebViewEvent &evt)
 {
     BOOST_LOG_TRIVIAL(trace) << __FUNCTION__ << ": " << evt.GetString().ToUTF8().data();
     // wxGetApp().CallAfter([this] { SendRecentList(); });
+    evt.Skip();
 }
 
 /**
@@ -707,6 +735,8 @@ void WebViewPanel::OnNewWindow(wxWebViewEvent& evt)
         m_browser->LoadURL(evt.GetURL());
 
     UpdateState();
+
+    evt.Skip();
 }
 
 void WebViewPanel::OnScriptMessage(wxWebViewEvent& evt)
@@ -738,6 +768,8 @@ void WebViewPanel::OnScriptMessage(wxWebViewEvent& evt)
     else {
         m_response_js.clear();
     }
+
+    evt.Skip();
 }
 
 void WebViewPanel::OnScriptResponseMessage(wxCommandEvent& WXUNUSED(evt))
@@ -954,8 +986,18 @@ void WebViewPanel::OnError(wxWebViewEvent& event)
     case wxWEBVIEW_NAV_ERR_USER_CANCELLED: e = "wxWEBVIEW_NAV_ERR_USER_CANCELLED"; break;
     case wxWEBVIEW_NAV_ERR_OTHER: e = "wxWEBVIEW_NAV_ERR_OTHER"; break;
     }
-    BOOST_LOG_TRIVIAL(fatal) << __FUNCTION__<< boost::format(":PrinterWebView error loading page %1% %2% %3% %4%") % event.GetURL() % event.GetTarget() %e % event.GetString();
-    
+
+    BOOST_LOG_TRIVIAL(error) << __FUNCTION__<< boost::format(":PrinterWebView error loading page %1% %2% %3% %4%") % event.GetURL() % event.GetTarget() %e % event.GetString();
+
+    std::string errorMsg = e;
+
+    if (errorMsg == event.GetString()) {
+        BOOST_LOG_TRIVIAL(error) << "WebViewPanel stop load and veto";
+        m_browser->Stop();
+        event.Veto();
+        return;
+    }
+    event.Skip();
 }
 
 
