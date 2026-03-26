@@ -319,14 +319,22 @@ bool PresetUpdater::priv::get_file(const std::string &url, const fs::path &targe
 bool PresetUpdater::priv::extract_file(const fs::path &source_path, const fs::path &dest_path)
 {
     bool res = true;
-    std::string file_path = source_path.string();
-    std::string parent_path = (!dest_path.empty() ? dest_path : source_path.parent_path()).string();
+    const std::string file_path = source_path.string();
+    const fs::path    parent_path = !dest_path.empty() ? dest_path : source_path.parent_path();
     mz_zip_archive archive;
     mz_zip_zero_struct(&archive);
 
     if (!open_zip_reader(&archive, file_path))
     {
         BOOST_LOG_TRIVIAL(error) << "Unable to open zip reader for "<<file_path;
+        return false;
+    }
+
+    boost::system::error_code ec;
+    fs::create_directories(parent_path, ec);
+    if (ec) {
+        BOOST_LOG_TRIVIAL(error) << "[Orca Updater]Unable to create extract root " << parent_path.string() << ", reason: " << ec.message();
+        close_zip_reader(&archive);
         return false;
     }
 
@@ -338,26 +346,53 @@ bool PresetUpdater::priv::extract_file(const fs::path &source_path, const fs::pa
     {
         if (mz_zip_reader_file_stat(&archive, i, &stat))
         {
-            std::string dest_file = parent_path+"/"+stat.m_filename;
-            if (stat.m_is_directory) {
-                fs::path dest_path(dest_file);
-                if (!fs::exists(dest_path))
-                    fs::create_directories(dest_path);
-				continue;
+            const fs::path entry_path = fs::path(stat.m_filename).lexically_normal();
+            // Reject dangerous / invalid entries to avoid escaping the destination root.
+            bool has_parent_ref = false;
+            for (const auto &part : entry_path) {
+                if (part == "..") {
+                    has_parent_ref = true;
+                    break;
+                }
             }
-            else if (stat.m_uncomp_size == 0) {
+            if (entry_path.empty() || entry_path.is_absolute() || has_parent_ref) {
+                BOOST_LOG_TRIVIAL(warning) << "[Orca Updater]Skip unsafe zip entry: " << stat.m_filename;
+                continue;
+            }
+
+            const fs::path out_path = parent_path / entry_path;
+            if (stat.m_is_directory) {
+                fs::create_directories(out_path, ec);
+                if (ec) {
+                    BOOST_LOG_TRIVIAL(error) << "[Orca Updater]Create dir failed: " << out_path.string() << ", reason: " << ec.message();
+                    close_zip_reader(&archive);
+                    return false;
+                }
+                continue;
+            } else if (stat.m_uncomp_size == 0) {
                 BOOST_LOG_TRIVIAL(warning) << "[Orca Updater]Unzip: invalid size for file "<<stat.m_filename;
                 continue;
             }
+
             try
             {
-                res = mz_zip_reader_extract_to_file(&archive, stat.m_file_index, dest_file.c_str(), 0);
+                const fs::path out_dir = out_path.parent_path();
+                if (!out_dir.empty()) {
+                    fs::create_directories(out_dir, ec);
+                    if (ec) {
+                        BOOST_LOG_TRIVIAL(error) << "[Orca Updater]Create parent dir failed: " << out_dir.string() << ", reason: " << ec.message();
+                        close_zip_reader(&archive);
+                        return false;
+                    }
+                }
+
+                res = mz_zip_reader_extract_to_file(&archive, stat.m_file_index, out_path.string().c_str(), 0);
                 if (!res) {
-                    BOOST_LOG_TRIVIAL(error) << "[Orca Updater]extract file "<<stat.m_filename<<" to dest "<<dest_file<<" failed";
+                    BOOST_LOG_TRIVIAL(error) << "[Orca Updater]extract file "<<stat.m_filename<<" to dest "<<out_path.string()<<" failed";
                     close_zip_reader(&archive);
                     return res;
                 }
-                BOOST_LOG_TRIVIAL(info) << "[Orca Updater]successfully extract file " << stat.m_file_index << " to "<<dest_file;
+                BOOST_LOG_TRIVIAL(info) << "[Orca Updater]successfully extract file " << stat.m_file_index << " to "<<out_path.string();
             }
             catch (const std::exception& e)
             {
@@ -660,7 +695,7 @@ bool PresetUpdater::priv::download_file(const std::string& url,
                                         int   timeout_sec,
                                         bool* cancel_flag )
 {
-    bool res = true;
+    bool res = false;
 
     fs::path tmp_path = target_path + ".tmp";
 
@@ -673,41 +708,61 @@ bool PresetUpdater::priv::download_file(const std::string& url,
                 cancel_http = true;
             }
         })
-        .on_error([&url](std::string body, std::string error, unsigned http_status) {
+        .on_error([&url, &res](std::string body, std::string error, unsigned http_status) {
             BOOST_LOG_TRIVIAL(error) << "Download failed: " << url << ", HTTP status: " << http_status << ", error: " << error;
+            (void)body;
+            res = false;
         })
-        .on_complete([&,target_path,tmp_path](std::string body, unsigned http_status) {
+        .on_complete([&, target_path, tmp_path](std::string body, unsigned http_status) {
             if (http_status != 200) {
                 BOOST_LOG_TRIVIAL(error) << "Download failed with HTTP status: " << http_status;
+                res = false;
                 return;
             }
             fs::path target(target_path);
-            if (!fs::exists(target.parent_path())) {
-                fs::create_directories(target.parent_path());
+            boost::system::error_code ec;
+            if (!target.parent_path().empty() && !fs::exists(target.parent_path())) {
+                fs::create_directories(target.parent_path(), ec);
+                if (ec) {
+                    BOOST_LOG_TRIVIAL(error) << "Failed to create parent path: " << target.parent_path().string() << ", reason: " << ec.message();
+                    res = false;
+                    return;
+                }
             }
 
             fs::fstream file(tmp_path, std::ios::out | std::ios::binary | std::ios::trunc);
             if (!file.is_open()) {
                 BOOST_LOG_TRIVIAL(error) << "Failed to open file for writing: " << tmp_path;
+                res = false;
                 return;
             }
             file.write(body.c_str(), body.size());
             file.close();
 
-            boost::system::error_code ec;
             fs::rename(tmp_path, target_path, ec);
             if (ec) {
                 BOOST_LOG_TRIVIAL(error) << "Failed to rename temp file: " << ec.message();
+                res = false;
                 return;
             }
-            extract_file(target_path, "../ota/profiles/");
+
+            const fs::path extract_dest = target.parent_path() / target.stem();
+            if (!extract_file(target, extract_dest)) {
+                BOOST_LOG_TRIVIAL(error) << "Failed to extract downloaded archive: " << target.string()
+                                         << " to: " << extract_dest.string();
+                res = false;
+                return;
+            }
+
             BOOST_LOG_TRIVIAL(info) << "Download completed: " << target_path;
+            res = true;
         })
         .timeout_max(timeout_sec)
-        .perform();
+        .perform_sync();
 
     if (fs::exists(tmp_path)) {
-        fs::remove(tmp_path);
+        boost::system::error_code rm_ec;
+        fs::remove(tmp_path, rm_ec);
     }
 
     return res;
