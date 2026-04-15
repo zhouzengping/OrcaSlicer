@@ -5,6 +5,7 @@
 #include "Preset.hpp"
 #include "PresetBundle.hpp"
 #include "AppConfig.hpp"
+#include "DevModeHelp.hpp"
 
 #ifdef _MSC_VER
     #define WIN32_LEAN_AND_MEAN
@@ -564,7 +565,7 @@ void Preset::save(DynamicPrintConfig* parent_config)
     boost::filesystem::create_directories(fs::path(this->file).parent_path());
 
     //BBS: only save difference if it has parent
-    if (parent_config) {
+    if (parent_config && !Slic3r::is_developer_mode()) {
         DynamicPrintConfig temp_config;
         std::vector<std::string> dirty_options = config.diff(*parent_config);
 
@@ -584,9 +585,12 @@ void Preset::save(DynamicPrintConfig* parent_config)
     }
     BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " save config for: " << this->name << " and filament_id: " << filament_id << " and base_id: " << this->base_id;
 
-    fs::path idx_file(this->file);
-    idx_file.replace_extension(".info");
-    this->save_info(idx_file.string());
+    if (!Slic3r::is_developer_mode())
+    {
+        fs::path idx_file(this->file);
+        idx_file.replace_extension(".info");
+        this->save_info(idx_file.string());
+    }
 }
 
 void Preset::reload(Preset const &parent)
@@ -2293,6 +2297,7 @@ void PresetCollection::save_current_preset(const std::string &new_name, bool det
     Preset curr_preset = _curr_preset ? *_curr_preset : m_edited_preset;
     //BBS: add lock logic for sync preset in background
     std::string final_inherits;
+    DynamicPrintConfig original_config;
     lock();
     // 1) Find the preset with a new_name or create a new one,
     // initialize it with the edited config.
@@ -2301,7 +2306,7 @@ void PresetCollection::save_current_preset(const std::string &new_name, bool det
         // Preset with the same name found.
         Preset &preset = *it;
         //BBS: add project embedded preset logic
-        if (preset.is_default || preset.is_system) {
+        if (preset.is_default || (preset.is_system && !Slic3r::is_developer_mode())) {
         //if (preset.is_default || preset.is_external || preset.is_system)
             // Cannot overwrite the default preset.
             //BBS: add lock logic for sync preset in background
@@ -2309,11 +2314,14 @@ void PresetCollection::save_current_preset(const std::string &new_name, bool det
             return;
         }
         // Overwriting an existing preset.
+        // In dev mode, capture the original config before overwrite so we can diff against it.
+        if (Slic3r::is_developer_mode())
+            original_config = preset.config;
         preset.config = std::move(curr_preset.config);
         // The newly saved preset will be activated -> make it visible.
         preset.is_visible = true;
         //TODO: remove the detach logic
-        if (detach) {
+        if (detach && !Slic3r::is_developer_mode()) {
             // Clear the link to the parent profile.
             preset.vendor = nullptr;
 			preset.inherits().clear();
@@ -2324,12 +2332,14 @@ void PresetCollection::save_current_preset(const std::string &new_name, bool det
         }
         //BBS: add lock logic for sync preset in background
 
-        if (m_type == Preset::TYPE_PRINT)
-            preset.config.option<ConfigOptionString>("print_settings_id", true)->value = new_name;
-        else if (m_type == Preset::TYPE_FILAMENT)
-            preset.config.option<ConfigOptionStrings>("filament_settings_id", true)->values[0] = new_name;
-        else if (m_type == Preset::TYPE_PRINTER)
-            preset.config.option<ConfigOptionString>("printer_settings_id", true)->value = new_name;
+        if (!Slic3r::is_developer_mode()) {
+            if (m_type == Preset::TYPE_PRINT)
+                preset.config.option<ConfigOptionString>("print_settings_id", true)->value = new_name;
+            else if (m_type == Preset::TYPE_FILAMENT)
+                preset.config.option<ConfigOptionStrings>("filament_settings_id", true)->values[0] = new_name;
+            else if (m_type == Preset::TYPE_PRINTER)
+                preset.config.option<ConfigOptionString>("printer_settings_id", true)->value = new_name;
+        }
         final_inherits = preset.inherits();
         unlock();
         // TODO: apply change from custom root to devided presets.
@@ -2343,6 +2353,10 @@ void PresetCollection::save_current_preset(const std::string &new_name, bool det
         Preset       &preset   = *m_presets.insert(it, curr_preset);
         std::string  &inherits = preset.inherits();
         std::string   old_name = preset.name;
+
+        if (Slic3r::is_developer_mode())
+            original_config = preset.config;
+
         preset.name = new_name;
         preset.vendor = nullptr;
 		preset.alias.clear();
@@ -2365,9 +2379,11 @@ void PresetCollection::save_current_preset(const std::string &new_name, bool det
         }
 
         preset.is_default  = false;
-        preset.is_system   = false;
         preset.is_external = false;
-        preset.file        = this->path_for_preset(preset);
+        if (!Slic3r::is_developer_mode()) {
+            preset.is_system = false;
+            preset.file      = this->path_for_preset(preset);
+        }
         // The newly saved preset will be activated -> make it visible.
         preset.is_visible  = true;
         // Just system presets have aliases
@@ -2378,12 +2394,14 @@ void PresetCollection::save_current_preset(const std::string &new_name, bool det
         }
         else
             preset.is_project_embedded = false;
-        if (m_type == Preset::TYPE_PRINT)
-            preset.config.option<ConfigOptionString>("print_settings_id", true)->value = new_name;
-        else if (m_type == Preset::TYPE_FILAMENT)
-            preset.config.option<ConfigOptionStrings>("filament_settings_id", true)->values[0] = new_name;
-        else if (m_type == Preset::TYPE_PRINTER)
-            preset.config.option<ConfigOptionString>("printer_settings_id", true)->value = new_name;
+        if (!Slic3r::is_developer_mode()) {
+            if (m_type == Preset::TYPE_PRINT)
+                preset.config.option<ConfigOptionString>("print_settings_id", true)->value = new_name;
+            else if (m_type == Preset::TYPE_FILAMENT)
+                preset.config.option<ConfigOptionStrings>("filament_settings_id", true)->values[0] = new_name;
+            else if (m_type == Preset::TYPE_PRINTER)
+                preset.config.option<ConfigOptionString>("printer_settings_id", true)->value = new_name;
+        }
         //BBS: add lock logic for sync preset in background
         final_inherits = inherits;
         unlock();
@@ -2400,7 +2418,39 @@ void PresetCollection::save_current_preset(const std::string &new_name, bool det
             BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " base_id: " << parent_preset->setting_id;
         }
     }
-    if (parent_preset)
+    if (Slic3r::is_developer_mode()) {
+        // Dev mode: patch the system preset file in-place with only the changed fields.
+        // Diff the new config against original_config (captured before overwrite) to find
+        // exactly what the user changed, then patch only those keys into the file.
+        const Preset &selected = this->get_selected_preset();
+        std::map<std::string, std::string>              scalar_patches;
+        std::map<std::string, std::vector<std::string>> vector_patches;
+        const DynamicPrintConfig &cfg = selected.config;
+        std::vector<std::string> dirty = cfg.diff(original_config);
+        // filament_diameter and pellet_flow_coefficient are mutually derived:
+        // editing one auto-updates the other via Tab::on_value_change.
+        // If both appear in the diff, keep only the one the user actually edited
+        // (pellet printers show pellet_flow_coefficient; normal printers show filament_diameter).
+        {
+            bool has_diameter = std::find(dirty.begin(), dirty.end(), "filament_diameter")       != dirty.end();
+            bool has_pellet   = std::find(dirty.begin(), dirty.end(), "pellet_flow_coefficient") != dirty.end();
+            if (has_diameter && has_pellet) {
+                bool is_pellet_printer = cfg.option("pellet_modded_printer") &&
+                                         cfg.opt_bool("pellet_modded_printer");
+                const std::string &to_remove = is_pellet_printer ? "filament_diameter" : "pellet_flow_coefficient";
+                dirty.erase(std::remove(dirty.begin(), dirty.end(), to_remove), dirty.end());
+            }
+        }
+        for (const std::string &key : dirty) {
+            const ConfigOption *opt = cfg.option(key);
+            if (!opt) continue;
+            if (opt->is_scalar())
+                scalar_patches[key] = opt->serialize();
+            else
+                vector_patches[key] = static_cast<const ConfigOptionVectorBase *>(opt)->vserialize();
+        }
+        patch_preset_json(selected.file, scalar_patches, vector_patches);
+    } else if (parent_preset)
         this->get_selected_preset().save(&(parent_preset->config));
     else
         this->get_selected_preset().save(nullptr);
