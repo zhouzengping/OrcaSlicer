@@ -76,6 +76,7 @@
 #include "libslic3r/miniz_extension.hpp"
 #include "libslic3r/Utils.hpp"
 #include "libslic3r/Color.hpp"
+#include "libslic3r/DevModeHelp.hpp"
 
 #include "GUI.hpp"
 #include "GUI_Utils.hpp"
@@ -2091,7 +2092,7 @@ void GUI_App::init_app_config()
 #endif // _WIN32
     }
     set_logging_level(Slic3r::level_string_to_boost(app_config->get("log_severity_level")));
-
+    Slic3r::set_app_config(app_config);
 }
 
 // returns true if found newer version and user agreed to use it

@@ -1,4 +1,5 @@
 #include "DevModeHelp.hpp"
+#include "AppConfig.hpp"
 
 #include <algorithm>
 #include <iomanip>
@@ -10,10 +11,6 @@
 
 #include <boost/nowide/fstream.hpp>
 #include <boost/log/trivial.hpp>
-
-#ifdef _WIN32
-#include <windows.h>
-#endif
 
 namespace {
 
@@ -177,6 +174,13 @@ const std::set<std::string>& metaDataKeys() {
 
 namespace Slic3r {
 
+static AppConfig* s_app_config = nullptr;
+
+void set_app_config(AppConfig* config)
+{
+    s_app_config = config;
+}
+
 struct Replacement {
     size_t      start;
     size_t      end;
@@ -185,19 +189,7 @@ struct Replacement {
 
 bool is_developer_mode()
 {
-#ifdef _WIN32
-    HKEY key = NULL;
-    if (RegOpenKeyEx(HKEY_CURRENT_USER, L"SOFTWARE\\Snapmaker\\OrcaSlicer", 0, KEY_READ, &key) != ERROR_SUCCESS)
-        return false;
-    DWORD value = 0;
-    DWORD size  = sizeof(value);
-    DWORD type  = REG_DWORD;
-    bool ok = (RegQueryValueEx(key, L"DeveloperMode", NULL, &type, (LPBYTE)&value, &size) == ERROR_SUCCESS);
-    RegCloseKey(key);
-    return ok && value == 1;
-#else
-    return false;
-#endif
+    return s_app_config && s_app_config->get_bool("app", "is_developer_mode");
 }
 
 bool patch_preset_json(const std::string &file_path,
