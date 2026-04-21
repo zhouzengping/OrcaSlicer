@@ -7,10 +7,6 @@
 
 namespace Slic3r {
 
-class AppConfig;
-
-void set_app_config(AppConfig* config);
-
 // developer mode check
 bool is_developer_mode();
 

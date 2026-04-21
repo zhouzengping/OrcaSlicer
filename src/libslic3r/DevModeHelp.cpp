@@ -1,5 +1,8 @@
 #include "DevModeHelp.hpp"
-#include "AppConfig.hpp"
+#include "Utils.hpp"
+
+#include <boost/filesystem.hpp>
+#include <nlohmann/json.hpp>
 
 #include <algorithm>
 #include <iomanip>
@@ -174,11 +177,18 @@ const std::set<std::string>& metaDataKeys() {
 
 namespace Slic3r {
 
-static AppConfig* s_app_config = nullptr;
-
-void set_app_config(AppConfig* config)
+bool is_developer_mode()
 {
-    s_app_config = config;
+    namespace fs = boost::filesystem;
+    fs::path devmode_file = fs::path(data_dir()) / "devmode.json";
+    boost::nowide::ifstream ifs(devmode_file.string());
+    if (!ifs.is_open())
+        return false;
+    nlohmann::json j = nlohmann::json::parse(ifs, nullptr, false);
+    if (j.is_discarded() || !j.is_object())
+        return false;
+    auto it = j.find("is_developer_mode");
+    return it != j.end() && it->is_boolean() && it->get<bool>();
 }
 
 struct Replacement {
@@ -186,11 +196,6 @@ struct Replacement {
     size_t      end;
     std::string value; // empty string means deletion of the whole entry
 };
-
-bool is_developer_mode()
-{
-    return s_app_config && s_app_config->get_bool("app", "is_developer_mode");
-}
 
 bool patch_preset_json(const std::string &file_path,
                        const std::map<std::string, std::string>              &scalar_patches,
