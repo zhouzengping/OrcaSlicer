@@ -107,6 +107,28 @@ bool find_value_range(const std::string& text, size_t colon, size_t& value_start
     return value_end > value_start;
 }
 
+static std::string escape_json_string(const std::string& s)
+{
+    std::ostringstream oss;
+    for (unsigned char c : s) {
+        switch (c) {
+        case '"':  oss << "\\\""; break;
+        case '\\': oss << "\\\\"; break;
+        case '\n': oss << "\\n";  break;
+        case '\r': oss << "\\r";  break;
+        case '\t': oss << "\\t";  break;
+        default:
+            if (c < 0x20) {
+                oss << "\\u" << std::hex << std::setw(4) << std::setfill('0') << (int)c;
+            } else {
+                oss << c;
+            }
+            break;
+        }
+    }
+    return oss.str();
+}
+
 // Serialize a vector of strings as a compact JSON array: ["a", "b"]
 std::string serialize_array(const std::vector<std::string>& values)
 {
@@ -115,16 +137,7 @@ std::string serialize_array(const std::vector<std::string>& values)
     for (size_t i = 0; i < values.size(); ++i) {
         if (i > 0)
             oss << ", ";
-        oss << '"';
-        for (char c : values[i]) {
-            if (c == '"')
-                oss << "\\\"";
-            else if (c == '\\')
-                oss << "\\\\";
-            else
-                oss << c;
-        }
-        oss << '"';
+        oss << '"' << escape_json_string(values[i]) << '"';
     }
     oss << ']';
     return oss.str();
@@ -135,7 +148,7 @@ std::string serialize_scalar(const std::string& v)
 {
     if (!v.empty() && (v[0] == '-' || (v[0] >= '0' && v[0] <= '9') || v == "true" || v == "false" || v == "null"))
         return v;
-    return "\"" + v + "\"";
+    return "\"" + escape_json_string(v) + "\"";
 }
 
 // Detect the indentation used for existing keys (e.g. "    " for 4-space indent).
