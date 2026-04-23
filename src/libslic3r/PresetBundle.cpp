@@ -7,6 +7,7 @@
 #include "Model.hpp"
 #include "format.hpp"
 #include "common_func/common_func.hpp"
+#include "DevModeHelp.hpp"
 
 #include <algorithm>
 #include <set>
@@ -1202,7 +1203,10 @@ std::pair<PresetsConfigSubstitutions, std::string> PresetBundle::load_system_pre
 
     // Here the vendor specific read only Config Bundles are stored.
     //BBS: change directory by design
-    boost::filesystem::path     dir = (boost::filesystem::path(data_dir()) / PRESET_SYSTEM_DIR).make_preferred();
+    std::string dev_work_path = Slic3r::get_dev_mode_work_path();
+    boost::filesystem::path dir = (!dev_work_path.empty()
+        ? boost::filesystem::path(dev_work_path)
+        : boost::filesystem::path(data_dir()) / PRESET_SYSTEM_DIR).make_preferred();
     if (validation_mode)
         dir = (boost::filesystem::path(data_dir())).make_preferred();
 
@@ -3117,7 +3121,7 @@ std::pair<PresetsConfigSubstitutions, size_t> PresetBundle::load_vendor_configs_
             return reason;
         }
 
-        auto file_path = (boost::filesystem::path(data_dir())  /PRESET_SYSTEM_DIR/ vendor_name / subfile_iter.second).make_preferred();
+        auto file_path = (boost::filesystem::path(path) / vendor_name / subfile_iter.second).make_preferred();
         if(validation_mode)
             file_path = (boost::filesystem::path(data_dir()) / vendor_name / subfile_iter.second).make_preferred();
 

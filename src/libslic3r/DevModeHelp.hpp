@@ -10,6 +10,11 @@ namespace Slic3r {
 // developer mode check
 bool is_developer_mode();
 
+// Returns the custom vendor directory path from devmode.json "dev_mode_work_path",
+// or empty string if not set. When non-empty, this path replaces data_dir()/system
+// for vendor preset files only (e.g. Snapmaker.json and Snapmaker/ directory).
+std::string get_dev_mode_work_path();
+
 // Patch a preset JSON file in-place with minimal text changes.
 // Preserves all whitespace, field order, and formatting of untouched content.
 //

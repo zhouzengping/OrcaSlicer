@@ -190,18 +190,46 @@ const std::set<std::string>& metaDataKeys() {
 
 namespace Slic3r {
 
-bool is_developer_mode()
+static nlohmann::json load_devmode_json()
 {
     namespace fs = boost::filesystem;
     fs::path devmode_file = fs::path(data_dir()) / "devmode.json";
     boost::nowide::ifstream ifs(devmode_file.string());
     if (!ifs.is_open())
-        return false;
+        return nlohmann::json{};
     nlohmann::json j = nlohmann::json::parse(ifs, nullptr, false);
     if (j.is_discarded() || !j.is_object())
-        return false;
-    auto it = j.find("is_developer_mode");
-    return it != j.end() && it->is_boolean() && it->get<bool>();
+        return nlohmann::json{};
+    return j;
+}
+
+bool is_developer_mode()
+{
+    static bool s_devMode = []()->bool {
+        auto j = load_devmode_json();
+        if (j.empty())
+            return false;
+        auto it = j.find("is_developer_mode");
+        return it != j.end() && it->is_boolean() && it->get<bool>();
+    }();
+    return s_devMode;
+}
+
+std::string get_dev_mode_work_path()
+{
+    if (!is_developer_mode())
+        return std::string();
+
+    static std::string s_devModeWorkPath = []()->std::string {
+        auto j = load_devmode_json();
+        if (j.empty())
+            return std::string();
+        auto it = j.find("dev_mode_work_path");
+        if (it == j.end() || !it->is_string())
+            return std::string();
+        return it->get<std::string>();
+    }();
+    return s_devModeWorkPath;
 }
 
 struct Replacement {
