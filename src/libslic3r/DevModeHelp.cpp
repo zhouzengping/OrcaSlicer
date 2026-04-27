@@ -246,7 +246,7 @@ bool patch_preset_json(const std::string &file_path,
     if (scalar_patches.empty() && vector_patches.empty() && keys_to_remove.empty())
         return true;
 
-    boost::nowide::ifstream ifs(file_path);
+    boost::nowide::ifstream ifs(file_path, std::ios::binary);
     if (!ifs.is_open()) {
         BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << ": cannot open " << file_path;
         return false;
@@ -378,7 +378,7 @@ bool patch_preset_json(const std::string &file_path,
     for (const auto &r : replacements)
         text.replace(r.start, r.end - r.start, r.value);
 
-    boost::nowide::ofstream ofs(file_path, std::ios::out | std::ios::trunc);
+    boost::nowide::ofstream ofs(file_path, std::ios::out | std::ios::trunc | std::ios::binary);
     if (!ofs.is_open()) {
         BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << ": cannot write " << file_path;
         return false;
