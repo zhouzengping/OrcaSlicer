@@ -292,6 +292,10 @@ AboutDialog::AboutDialog()
     text_list.push_back(_L("Snapmaker Orca integrates some features from the 3D printing open-source community, with specific attributions provided in the code comments."));
     text_list.push_back(_L(""));
     text_list.push_back(_L("Snapmaker Orca is licensed under the GNU Affero Generall Public License, version 3."));
+
+
+    // Devmode
+    text_list.push_back(_L("开发者模式包,更新时间：5.12"));
     
     text_sizer->Add( 0, 0, 0, wxTOP, FromDIP(33));
     bool is_zh = wxGetApp().app_config->get("language") == "zh_CN";
