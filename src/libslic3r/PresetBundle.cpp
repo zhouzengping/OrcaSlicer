@@ -8,6 +8,7 @@
 #include "format.hpp"
 #include "common_func/common_func.hpp"
 #include "DevModeHelp.hpp"
+#include "nlohmann/json.hpp"
 
 #include <algorithm>
 #include <set>
@@ -265,7 +266,41 @@ PresetsConfigSubstitutions PresetBundle::load_presets(AppConfig &config, Forward
 
     //BBS: add config related logs
     BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << boost::format(" finished, returned substitutions %1%")%substitutions.size();
+
+    // Developer mode: export hardcoded default presets to JSON for inspection.
+    if (is_developer_mode()) {
+        this->export_default_presets_to_json(data_dir());
+    }
+
     return substitutions;
+}
+
+void PresetBundle::export_default_presets_to_json(const std::string& output_dir) const
+{
+    auto serialize_preset_config = [](const Preset& preset) -> nlohmann::json {
+        nlohmann::json obj = nlohmann::json::object();
+        const DynamicPrintConfig& config = preset.config;
+        for (const auto& key : config.keys()) {
+            const ConfigOption* opt = config.option(key);
+            if (opt == nullptr)
+                continue;
+            obj[key] = opt->serialize();
+        }
+        return obj;
+    };
+
+    nlohmann::json root;
+    root["process"]  = serialize_preset_config(this->prints.default_preset());
+    root["filament"] = serialize_preset_config(this->filaments.default_preset());
+    root["machine"]  = serialize_preset_config(this->printers.default_preset());
+
+    boost::filesystem::path output_path = boost::filesystem::path(output_dir) / "default_presets.json";
+    boost::nowide::ofstream ofs(output_path.string());
+    if (!ofs.is_open()) {
+        BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << ": cannot write to " << output_path.string();
+        return;
+    }
+    ofs << root.dump(4);
 }
 
 //BBS: add function to generate differed preset for save

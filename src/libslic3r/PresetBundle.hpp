@@ -316,6 +316,10 @@ private:
     // Update renamed_from and alias maps of system profiles.
     void 						update_system_maps();
 
+    // Export hardcoded default presets (process/filament/machine) to a JSON file.
+    // Only invoked in developer mode for debugging/inspection.
+    void export_default_presets_to_json(const std::string& output_dir) const;
+
     // Set the is_visible flag for filaments and sla materials,
     // apply defaults based on enabled printers when no filaments/materials are installed.
     void                        load_installed_filaments(AppConfig &config);
