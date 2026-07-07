@@ -295,6 +295,7 @@ AboutDialog::AboutDialog()
 
 
 
+
     // Devmode
     text_list.push_back(_L("开发者模式包,更新时间：5.12"));
     

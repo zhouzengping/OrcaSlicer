@@ -642,11 +642,11 @@ void FilamentColorDialog::BuildUi()
     wxBoxSizer* buttonPanelSizer = new wxBoxSizer(wxVERTICAL);
     wxBoxSizer* buttons = new wxBoxSizer(wxHORIZONTAL);
     Button* cancel = new Button(buttonPanel, _L("Cancel"), wxEmptyString, wxBORDER_NONE, 0, wxID_CANCEL);
-    cancel->SetStyle(ButtonStyle::Regular, ButtonType::Choice);
     const wxSize buttonSize(FromDIP(166), FromDIP(38));
     cancel->SetMinSize(buttonSize);
     cancel->SetSize(buttonSize);
     cancel->SetCornerRadius(FromDIP(4));
+    cancel->SetBorderWidth(FromDIP(1));
     cancel->SetBackgroundColorNormal(wxColour("#FFFFFF"));
     cancel->SetBorderColorNormal(wxColour("#D1D5DC"));
     cancel->SetTextColorNormal(wxColour("#242424"));
@@ -723,7 +723,7 @@ void FilamentColorDialog::UpdatePreview()
 
     const wxString name = FromStdString(GetSelectionDisplayName(_filament, _selection, _selectedSku, _languageCode));
     _nameLabel->SetLabel(name);
-    _skuLabel->SetLabel(_selectedSku.empty() ? wxEmptyString : FromStdString("sku " + _selectedSku));
+    _skuLabel->SetLabel(_selectedSku.empty() ? wxString(wxEmptyString) : FromStdString("sku " + _selectedSku));
     _skuLabel->Show(!_selectedSku.empty());
     Layout();
 }

@@ -2257,6 +2257,7 @@ void GUI_App::init_app_config()
     }
     MixedFilamentManager::set_auto_generate_enabled(app_config->get_bool("auto_generate_gradients"));
     set_logging_level(Slic3r::level_string_to_boost(app_config->get("log_severity_level")));
+
 }
 
 // returns true if found newer version and user agreed to use it
@@ -2342,7 +2343,7 @@ void GUI_App::do_notify_flutter_web_copy_failure()
         }
         break;
     default: 
-        BOOST_LOG_TRIVIAL(error) << "FlutterWebCopyStatus other status" << m_flutter_web_copy_status;
+        BOOST_LOG_TRIVIAL(error) << "FlutterWebCopyStatus other status" << static_cast<int>(m_flutter_web_copy_status);
         break;
     }
 }
