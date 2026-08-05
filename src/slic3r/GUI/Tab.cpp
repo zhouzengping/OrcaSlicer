@@ -3698,7 +3698,7 @@ void TabFilament::build()
         optgroup->append_single_option_line("filament_cost");
         //BBS
         optgroup->append_single_option_line("temperature_vitrification");
-        // filament_is_high_temperature is controlled by preset data, not user-facing
+        optgroup->append_single_option_line("filament_is_high_temperature");
         optgroup->append_single_option_line("idle_temperature");
         optgroup->append_single_option_line("filament_tower_ironing_area");
         Line line = { L("Recommended nozzle temperature"), L("Recommended nozzle temperature range of this filament. 0 means no set") };
@@ -4039,6 +4039,8 @@ void TabFilament::toggle_options()
     }
     if (m_active_page->title() == L("Filament"))
     {
+        toggle_option("filament_is_high_temperature", Slic3r::is_developer_mode());
+
         bool pa = m_config->opt_bool("enable_pressure_advance", 0);
         toggle_option("pressure_advance", pa);
 
