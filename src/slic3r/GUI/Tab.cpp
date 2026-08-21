@@ -30,6 +30,7 @@
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include "libslic3r/libslic3r.h"
+#include "libslic3r/DevModeHelp.hpp"
 #include "slic3r/GUI/OptionsGroup.hpp"
 #include "wxExtensions.hpp"
 #include "PresetComboBoxes.hpp"
@@ -3722,7 +3723,7 @@ void TabFilament::build()
         optgroup->append_single_option_line("filament_cost");
         //BBS
         optgroup->append_single_option_line("temperature_vitrification");
-        // filament_is_high_temperature is controlled by preset data, not user-facing
+        optgroup->append_single_option_line("filament_is_high_temperature");
         optgroup->append_single_option_line("idle_temperature");
         optgroup->append_single_option_line("filament_tower_ironing_area");
         Line line = { L("Recommended nozzle temperature"), L("Recommended nozzle temperature range of this filament. 0 means no set") };
@@ -4073,6 +4074,8 @@ void TabFilament::toggle_options()
     }
     if (m_active_page->title() == L("Filament"))
     {
+        toggle_option("filament_is_high_temperature", Slic3r::is_developer_mode());
+
         bool pa = m_config->opt_bool("enable_pressure_advance", 0);
         toggle_option("pressure_advance", pa);
 
@@ -6214,7 +6217,8 @@ void Tab::save_preset(std::string name /*= ""*/, bool detach, bool save_to_proje
             new_preset->user_id = wxGetApp().getAgent()->get_user_id();
         BOOST_LOG_TRIVIAL(info) << "sync_preset: create preset = " << new_preset->name;
     }
-    new_preset->save_info();
+    if (!Slic3r::is_developer_mode())
+        new_preset->save_info();
 
     // Mark the print & filament enabled if they are compatible with the currently selected preset.
     // If saving the preset changes compatibility with other presets, keep the now incompatible dependent presets selected, however with a "red flag" icon showing that they are no more compatible.

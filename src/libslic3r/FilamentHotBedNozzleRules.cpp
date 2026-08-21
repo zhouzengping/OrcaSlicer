@@ -1,5 +1,6 @@
 #include "FilamentHotBedNozzleRules.hpp"
 #include "Config.hpp"
+#include "DevModeHelp.hpp"
 #include "Preset.hpp"
 #include "PresetBundle.hpp"
 #include "Utils.hpp"
@@ -24,11 +25,12 @@ namespace {
 static std::string filament_hot_bed_nozzles_json_path()
 {
     namespace fs = boost::filesystem;
-    const fs::path user_path = (fs::path(Slic3r::data_dir()) / PRESET_SYSTEM_DIR / PresetBundle::SM_BUNDLE / "filament" /
-                                "filament_hot_bed_nozzles.json")
-                                 .make_preferred();
+    std::string dev_path = Slic3r::get_dev_mode_work_path();
+    const fs::path user_path = (dev_path.empty()
+        ? fs::path(Slic3r::data_dir()) / PRESET_SYSTEM_DIR
+        : fs::path(dev_path)) / PresetBundle::SM_BUNDLE / "filament" / "filament_hot_bed_nozzles.json";
     if (fs::exists(user_path))
-        return user_path.string();
+        return fs::path(user_path).make_preferred().string();
     return (fs::path(Slic3r::resources_dir()) / "profiles" / PresetBundle::SM_BUNDLE / "filament" / "filament_hot_bed_nozzles.json")
         .make_preferred()
         .string();

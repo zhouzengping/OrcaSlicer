@@ -27,6 +27,7 @@
 #include "libslic3r/Preset.hpp"
 #include "libslic3r/PresetBundle.hpp"
 #include "common_func/common_func.hpp"
+#include "libslic3r/DevModeHelp.hpp"
 #include "slic3r/GUI/GUI.hpp"
 #include "slic3r/GUI/GUI_App.hpp"
 #include "slic3r/GUI/I18N.hpp"
@@ -1591,6 +1592,10 @@ bool PresetUpdater::priv::install_bundles_rsrc(const std::vector<std::string>& b
 // Orca: copy/update the vendor profiles from resource to system folder
 void PresetUpdater::priv::check_installed_vendor_profiles() const
 {
+    // In dev mode with a custom work path, vendor files are managed manually — skip auto-sync.
+    if (!Slic3r::get_dev_mode_work_path().empty())
+        return;
+
     BOOST_LOG_TRIVIAL(info) << "[Orca Updater]:Checking whether the profile from resource is newer";
 
     AppConfig *app_config = GUI::wxGetApp().app_config;

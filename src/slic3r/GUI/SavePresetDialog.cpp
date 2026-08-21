@@ -11,6 +11,7 @@
 #include <wx/wupdlock.h>
 
 #include "libslic3r/PresetBundle.hpp"
+#include "libslic3r/DevModeHelp.hpp"
 
 #include "GUI.hpp"
 #include "GUI_App.hpp"
@@ -36,7 +37,9 @@ SavePresetDialog::Item::Item(Preset::Type type, const std::string &suffix, wxBox
     m_presets = tab->get_presets();
 
     const Preset &sel_preset  = m_presets->get_selected_preset();
-    std::string   preset_name = sel_preset.is_default ? "Untitled" : sel_preset.is_system ? (boost::format(("%1% - %2%")) % sel_preset.name % suffix).str() : sel_preset.name;
+    std::string   preset_name = sel_preset.is_default ? "Untitled" :
+        (sel_preset.is_system && !Slic3r::is_developer_mode()) ? (boost::format(("%1% - %2%")) % sel_preset.name % suffix).str() :
+        sel_preset.name;
 
     // if name contains extension
     if (boost::iends_with(preset_name, ".ini")) {
@@ -85,6 +88,8 @@ SavePresetDialog::Item::Item(Preset::Type type, const std::string &suffix, wxBox
     m_input_ctrl = new ::TextInput(parent, from_u8(preset_name), wxEmptyString, wxEmptyString, wxDefaultPosition, wxDefaultSize, wxTE_PROCESS_ENTER);
     StateColor input_bg(std::pair<wxColour, int>(wxColour("#F0F0F1"), StateColor::Disabled), std::pair<wxColour, int>(*wxWHITE, StateColor::Enabled));
     m_input_ctrl->SetBackgroundColor(input_bg);
+    if (Slic3r::is_developer_mode())
+        m_input_ctrl->GetTextCtrl()->SetEditable(false);
     m_input_ctrl->Bind(wxEVT_TEXT, [this](wxCommandEvent &) { update(); });
     m_input_ctrl->SetMinSize(wxSize(SAVE_PRESET_DIALOG_INPUT_SIZE));
     m_input_ctrl->SetMaxSize(wxSize(SAVE_PRESET_DIALOG_INPUT_SIZE));
@@ -153,7 +158,7 @@ void SavePresetDialog::Item::update()
     }
 
     const Preset *existing = m_presets->find_preset(m_preset_name, false);
-    if (m_valid_type == Valid && existing && (existing->is_default || existing->is_system)) {
+    if (m_valid_type == Valid && existing && (existing->is_default || (existing->is_system && !Slic3r::is_developer_mode()))) {
         info_line = _L("Overwriting a system profile is not allowed.");
         m_valid_type = NoValid;
     }
