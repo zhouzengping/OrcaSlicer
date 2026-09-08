@@ -940,6 +940,12 @@ void Tab::refresh_flow_variant_view()
         modes = support->values;
     if (modes.empty())
         modes.emplace_back(FLOW_MODE_STANDARD);
+    // Snapmaker: in developer mode, a preset that does not declare "high_flow" in its
+    // *_flow_support still gets a High Flow segment in the flow toggle, so developers
+    // can fill in the high-flow variant parameter values.
+    if (Slic3r::is_developer_mode() &&
+        std::find(modes.begin(), modes.end(), FLOW_MODE_HIGH_FLOW) == modes.end())
+        modes.emplace_back(FLOW_MODE_HIGH_FLOW);
 
     if (std::find(modes.begin(), modes.end(), m_flow_variant_view->selected_mode) == modes.end())
     {
@@ -1034,8 +1040,11 @@ void Tab::update_flow_variant_view_visibility()
     const bool active_page_supports_flow_variants = m_flow_variant_view &&
         std::any_of(m_flow_variant_view->pages.begin(), m_flow_variant_view->pages.end(),
                     [this](const PageShp& page) { return m_active_page == page.get(); });
+    // Snapmaker: in developer mode the flow toggle is shown even when the preset
+    // declares a single flow variant (refresh_flow_variant_view appends the High Flow
+    // segment), so developers can edit high-flow parameters.
     const bool show = active_page_supports_flow_variants && m_flow_variant_view->selector
-                      && m_flow_variant_view->modes.size() > 1;
+                      && (m_flow_variant_view->modes.size() > 1 || Slic3r::is_developer_mode());
 
     if (m_flow_variant_view && m_flow_variant_view->selector) {
         // Reveal only this tab's selector; hide any sibling selector left visible by
@@ -4995,7 +5004,10 @@ void TabPrinter::build_unregular_pages(bool from_initial_build/* = false*/)
         else {
             m_pages.insert(m_pages.begin() + n_before_extruders, page);
 
-            if (!machine_flow_variant_options().empty())
+            // Snapmaker: in developer mode the machine flow toggle is registered even
+            // when no machine flow-variant options exist yet, so developers can see
+            // and switch the flow mode for the machine preset.
+            if (!machine_flow_variant_options().empty() || Slic3r::is_developer_mode())
                 register_flow_variant_view(
                     ConfigFlowDomain::Printer,
                     page,

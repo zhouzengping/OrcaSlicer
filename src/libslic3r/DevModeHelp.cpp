@@ -143,11 +143,13 @@ std::string serialize_array(const std::vector<std::string>& values)
     return oss.str();
 }
 
-// Wrap a scalar value in quotes unless it is already a JSON literal.
+// Preset JSON stores every config value as a JSON string (see
+// ConfigBase::save_to_json, which assigns serialize() results as strings),
+// so always quote — even values that look like numbers/bools. The loader
+// (ConfigBase::load_from_json) only accepts is_string() values and would
+// silently drop unquoted ones.
 std::string serialize_scalar(const std::string& v)
 {
-    if (!v.empty() && (v[0] == '-' || (v[0] >= '0' && v[0] <= '9') || v == "true" || v == "false" || v == "null"))
-        return v;
     return "\"" + escape_json_string(v) + "\"";
 }
 

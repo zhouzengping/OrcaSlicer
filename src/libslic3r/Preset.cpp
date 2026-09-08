@@ -407,6 +407,13 @@ void Preset::normalize(DynamicPrintConfig &config)
     if (config.option("filament_diameter") != nullptr) {
         // This config contains single or multiple filament presets.
         // Ensure that the filament preset vector options contain the correct number of values.
+        // Snapmaker: in developer mode, a filament preset without an explicit
+        // filament_flow_support falls back to standard + high flow, so developers can
+        // edit both variants for any preset. Outside developer mode nothing changes:
+        // the missing declaration keeps the single-value behavior.
+        if (Slic3r::is_developer_mode() && config.option("filament_flow_support") == nullptr)
+            config.set_key_value("filament_flow_support",
+                                 new ConfigOptionStrings { FLOW_MODE_STANDARD, FLOW_MODE_HIGH_FLOW });
         const auto *filament_flow_support = config.option<ConfigOptionStrings>("filament_flow_support");
         const auto *filament_flow_step_sizes = config.option<ConfigOptionInts>("filament_flow_step_size");
         size_t flow_variant_value_count = n;
@@ -443,6 +450,13 @@ void Preset::normalize(DynamicPrintConfig &config)
                 static_cast<ConfigOptionStrings*>(opt)->values.resize(n, std::string());
         }
     } else if (config.option("layer_height") != nullptr) {
+        // Snapmaker: in developer mode, a process preset without an explicit
+        // process_flow_support falls back to standard + high flow (same reason as
+        // filament above). Set it before the print_options loop below would fill in
+        // the single-variant default. Outside developer mode nothing changes.
+        if (Slic3r::is_developer_mode() && config.option("process_flow_support") == nullptr)
+            config.set_key_value("process_flow_support",
+                                 new ConfigOptionStrings { FLOW_MODE_STANDARD, FLOW_MODE_HIGH_FLOW });
         // Print config: ensure all expected options exist in the loaded profile.
         for (const std::string &key : Preset::print_options()) {
             if (!config.has(key)) {
