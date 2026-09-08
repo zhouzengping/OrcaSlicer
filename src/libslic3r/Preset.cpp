@@ -208,6 +208,17 @@ static const char* preset_flow_support_key(Preset::Type type)
     }
 }
 
+static const std::vector<std::string>& preset_flow_variant_options(Preset::Type type)
+{
+    static const std::vector<std::string> empty;
+    switch (type) {
+    case Preset::TYPE_FILAMENT: return filament_flow_variant_options();
+    case Preset::TYPE_PRINT:    return process_flow_variant_options();
+    case Preset::TYPE_PRINTER:  return machine_flow_variant_options();
+    default:                    return empty;
+    }
+}
+
 static void keep_flow_support_in_differential_save(const Preset &preset, std::vector<std::string> &dirty_options)
 {
     const char *support_key = preset_flow_support_key(preset.type);
@@ -407,13 +418,16 @@ void Preset::normalize(DynamicPrintConfig &config)
     if (config.option("filament_diameter") != nullptr) {
         // This config contains single or multiple filament presets.
         // Ensure that the filament preset vector options contain the correct number of values.
-        // Snapmaker: in developer mode, a filament preset without an explicit
-        // filament_flow_support falls back to standard + high flow, so developers can
-        // edit both variants for any preset. Outside developer mode nothing changes:
-        // the missing declaration keeps the single-value behavior.
-        if (Slic3r::is_developer_mode() && config.option("filament_flow_support") == nullptr)
-            config.set_key_value("filament_flow_support",
-                                 new ConfigOptionStrings { FLOW_MODE_STANDARD, FLOW_MODE_HIGH_FLOW });
+        // Snapmaker: in developer mode, a filament preset whose declaration is missing
+        // or was inherited as the single-variant default from the default preset falls
+        // back to standard + high flow, so developers can edit both variants for any
+        // preset. Outside developer mode nothing changes.
+        if (Slic3r::is_developer_mode()) {
+            const auto *fs = config.option<ConfigOptionStrings>("filament_flow_support");
+            if (fs == nullptr || (fs->values.size() == 1 && fs->values.front() == FLOW_MODE_STANDARD))
+                config.set_key_value("filament_flow_support",
+                                     new ConfigOptionStrings { FLOW_MODE_STANDARD, FLOW_MODE_HIGH_FLOW });
+        }
         const auto *filament_flow_support = config.option<ConfigOptionStrings>("filament_flow_support");
         const auto *filament_flow_step_sizes = config.option<ConfigOptionInts>("filament_flow_step_size");
         size_t flow_variant_value_count = n;
@@ -450,13 +464,17 @@ void Preset::normalize(DynamicPrintConfig &config)
                 static_cast<ConfigOptionStrings*>(opt)->values.resize(n, std::string());
         }
     } else if (config.option("layer_height") != nullptr) {
-        // Snapmaker: in developer mode, a process preset without an explicit
-        // process_flow_support falls back to standard + high flow (same reason as
-        // filament above). Set it before the print_options loop below would fill in
-        // the single-variant default. Outside developer mode nothing changes.
-        if (Slic3r::is_developer_mode() && config.option("process_flow_support") == nullptr)
-            config.set_key_value("process_flow_support",
-                                 new ConfigOptionStrings { FLOW_MODE_STANDARD, FLOW_MODE_HIGH_FLOW });
+        // Snapmaker: in developer mode, a process preset whose declaration is missing
+        // or was inherited as the single-variant default falls back to standard +
+        // high flow (same reason as filament above). Set it before the print_options
+        // loop below would fill in the single-variant default. Outside developer mode
+        // nothing changes.
+        if (Slic3r::is_developer_mode()) {
+            const auto *ps = config.option<ConfigOptionStrings>("process_flow_support");
+            if (ps == nullptr || (ps->values.size() == 1 && ps->values.front() == FLOW_MODE_STANDARD))
+                config.set_key_value("process_flow_support",
+                                     new ConfigOptionStrings { FLOW_MODE_STANDARD, FLOW_MODE_HIGH_FLOW });
+        }
         // Print config: ensure all expected options exist in the loaded profile.
         for (const std::string &key : Preset::print_options()) {
             if (!config.has(key)) {
@@ -2616,6 +2634,26 @@ void PresetCollection::save_current_preset(const std::string &new_name, bool det
         std::map<std::string, std::vector<std::string>> vector_patches;
         const DynamicPrintConfig &cfg = selected.config;
         std::vector<std::string> dirty = cfg.diff(original_config);
+        // Snapmaker: patch the flow-support declaration into the file when the user
+        // edited a flow-variant option (a keylist member) that carries more than one
+        // value -- without the declaration the saved per-variant values are
+        // meaningless. The declaration itself is invisible to the diff above when it
+        // was filled in by normalize() as the developer-mode default (both sides of
+        // the diff carry it).
+        if (const char *support_key = preset_flow_support_key(selected.type)) {
+            const std::vector<std::string> &flow_variant_keys = preset_flow_variant_options(selected.type);
+            for (const std::string &key : dirty) {
+                if (std::find(flow_variant_keys.begin(), flow_variant_keys.end(), key) == flow_variant_keys.end())
+                    continue;
+                const ConfigOption *opt = cfg.option(key);
+                if (opt == nullptr || opt->is_scalar())
+                    continue;
+                if (static_cast<const ConfigOptionVectorBase *>(opt)->size() > 1) {
+                    dirty.emplace_back(support_key);
+                    break;
+                }
+            }
+        }
         // filament_diameter and pellet_flow_coefficient are mutually derived:
         // editing one auto-updates the other via Tab::on_value_change.
         // If both appear in the diff, keep only the one the user actually edited

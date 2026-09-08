@@ -5,6 +5,7 @@
 #include "GUI_App.hpp"
 #include "MsgDialog.hpp"
 #include "libslic3r/AppConfig.hpp"
+#include "libslic3r/DevModeHelp.hpp"
 
 #include <wx/utils.h>
 #include <boost/algorithm/string/split.hpp>
@@ -818,7 +819,10 @@ void OG_CustomCtrl::CtrlLine::render(wxDC& dc, wxCoord h_pos, wxCoord v_pos)
                     if (const DynamicPrintConfig* cfg = cog->get_config())
                         if (auto* fs = cfg->option<ConfigOptionStrings>("filament_flow_support"))
                             high_flow_supported = fs->values.size() > 1;
-                if (high_flow_supported) {
+                // Snapmaker: in developer mode the marker is always shown for
+                // flow-variant options, matching the flow toggle which is shown even
+                // for presets without a multi-variant filament_flow_support declaration.
+                if (high_flow_supported || Slic3r::is_developer_mode()) {
                     wxBitmap icon = create_scaled_bitmap("flow_variant", ctrl);
                     const wxSize isz = get_bitmap_size(icon);
                     dc.DrawBitmap(icon, h_pos, v_pos + lround((height - isz.GetHeight()) / 2.0));
