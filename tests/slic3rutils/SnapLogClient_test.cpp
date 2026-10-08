@@ -4,6 +4,7 @@
 #include <condition_variable>
 #include <deque>
 #include <future>
+#include <string_view>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -47,9 +48,9 @@ TEST_CASE("hmac_sha256_hex empty msg", "[snaplog]")
 
 TEST_CASE("level_str wire strings", "[snaplog]")
 {
-    REQUIRE(level_str(SnapLogLevel::Info) == "INFO");
-    REQUIRE(level_str(SnapLogLevel::Warning) == "WARN");
-    REQUIRE(level_str(SnapLogLevel::Error) == "ERROR");
+    REQUIRE(std::string_view(level_str(SnapLogLevel::Info)) == "INFO");
+    REQUIRE(std::string_view(level_str(SnapLogLevel::Warning)) == "WARN");
+    REQUIRE(std::string_view(level_str(SnapLogLevel::Error)) == "ERROR");
 }
 
 TEST_CASE("normalize_logger takes last segment", "[snaplog]")
@@ -687,6 +688,17 @@ TEST_CASE("log(): empty user_token drops events (login gate)", "[snaplog][pipeli
     SnapLogClient::instance().set_user_token("tok"); // login
     SnapLogClient::instance().log(SnapLogLevel::Info, "authed", SnapLogExt{{"eventName", "x"}}, SnapLogPolicy::Realtime, __FUNCTION__,
                                   __LINE__);
+    REQUIRE(SnapLogClient::instance().realtime_queue_size_for_test() == 1);
+    fc.shutdown();
+}
+
+TEST_CASE("log(): forced event bypasses empty user_token", "[snaplog][pipeline]")
+{
+    FakeClient fc;
+    fc.init();
+    SnapLogClient::instance().set_user_token("");
+    SnapLogClient::instance().log(SnapLogLevel::Info, "forced", SnapLogExt{{"eventName", "forced"}}, SnapLogPolicy::Realtime, __FUNCTION__,
+                                  __LINE__, true);
     REQUIRE(SnapLogClient::instance().realtime_queue_size_for_test() == 1);
     fc.shutdown();
 }
