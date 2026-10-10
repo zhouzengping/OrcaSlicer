@@ -1,10 +1,11 @@
 # Preset Schema 使用与新增 Key 指南
 
-`doc/schema/` 下的 YAML 由 `scripts/schema_gen/generate_schema.py` 从源码生成，
-**不要手改**——改源码后重跑脚本即可同步（后续接入 CI 做门禁）。
+`src/projectcore/schema/` 下的 YAML 由 `src/projectcore/schema/script/generate_schema.py`
+从源码生成，**不要手改**——改源码后重跑脚本即可同步（后续接入 CI 做门禁）。
 
 ```bash
-python scripts/schema_gen/generate_schema.py   # 输出统计 + warnings（应为 0）
+python src/projectcore/schema/script/generate_schema.py   # 输出统计 + warnings（应为 0）
+python src/projectcore/schema/script/yaml_to_json.py      # 同目录生成 .json（格式对照/消费）
 ```
 
 ## 文件布局
@@ -14,15 +15,20 @@ python scripts/schema_gen/generate_schema.py   # 输出统计 + warnings（应�
 | `print.yaml` | 工艺预设（质量/强度/速度/支撑/材料/其他 tab） | `TabPrint::build` |
 | `filament.yaml` | 耗材预设（含 Setting Overrides 页） | `TabFilament::build + add_filament_overrides_page` |
 | `printer.yaml` | 打印机预设（含 Extruder %d 模板页、机器限制） | `TabPrinter::build_fff + build_kinematics_page + build_unregular_pages` |
-| `hidden.yaml` | 不出现在预设 tab 的 key，按 scope 分组 | PrintConfigDef 减去上述 UI（已知盲区见文末） |
+| `hidden.yaml` | 不出现在预设 tab 的 key（单页平铺，tab/group 名为占位） | PrintConfigDef 减去上述 UI（已知盲区见文末） |
 | `i18n/{print,filament,printer,hidden}.yaml` | 展示层：label/full_label/tooltip/sidetext/category/enum_labels 的原文 + 各语言翻译 | `PrintConfig.cpp` 的 L() 文本 + `localization/i18n/zh_CN/*.po` |
 
-层级：`tablist → tabs → tab → groups → group → keys → key → 属性`（hidden 无 tab 层）。
+层级：`tabs[] → groups[] → keys[] → 属性`，四份文件格式统一。
+**三层全部是数组，顺序即 UI 显示顺序**——数组在 YAML/JSON 规范中保证有序，
+消费端按下标渲染；mapping 只用于 key 条目内的属性包（按名访问，无顺序需求）。
+同一 key 在页间/组间移动只影响其数组位置，顺序信息与结构信息合为一体，
+不再需要额外的顺序声明字段。hidden 的 tab/group 名为占位（`"hidden"` /
+`"undefined"`，无 UI 语义），key 顺序为原 scope 分组的展开序，scope 信息
+在每个 key 条目的 `scope` 字段。
 
-`tablist` 显式声明 tab 的**界面显示顺序**（YAML mapping 本身不保证顺序，消费端按此数组
-还原页序）。生成器保证 `tablist` 与 `tabs` 的键集合、顺序完全一致。printer 页序按
-Marlin 类 gcode_flavor 的首次构建顺序输出（非 Marlin 时 Extruder 块会移到
-"Motion ability" 之前且该页被清空，见 `TabPrinter::build_unregular_pages`）。
+生成器对数组做重复名检查（tab 名 / 组名 / key 名各自唯一，重复记入 warnings）。
+printer 页序按 Marlin 类 gcode_flavor 的首次构建顺序输出（非 Marlin 时 Extruder 块会
+移到 "Motion ability" 之前且该页被清空，见 `TabPrinter::build_unregular_pages`）。
 `Extruder %d` 是模板页：每个挤出机实例化一页，页名运行时以 `_L("Extruder %d")`
 格式化，翻译查 i18n 的 tabs 节同模板条目。
 
@@ -207,7 +213,7 @@ filament_type:                      # combobox_edit：软枚举
 
 ### i18n：展示层与翻译（display layer）
 
-`doc/schema/i18n/{print,filament,printer,hidden}.yaml` 收录每个 key 的**展示层**——
+`src/projectcore/schema/i18n/{print,filament,printer,hidden}.yaml` 收录每个 key 的**展示层**——
 源码 `def->label / full_label / tooltip / sidetext / category / enum_labels` 的原文
 与可用翻译。结构与语义（type/widget/default/min/max…）留在主 YAML，
 一切「显示什么、翻译成什么」都在这里，以 key 为单位组织：
@@ -244,6 +250,9 @@ infill_lock_depth:
   `hidden.yaml` 无此二节（key 按 hidden 主文件的 scope 顺序扁平排列）。
   动态页 `Extruder %d` 同样收录在 `tabs:` 节——`%d` 原样保留，GUI 先查表取
   模板串再格式化实例编号。
+- **i18n 文件本身是 mapping**（顶层 `keys:` 按 key 名索引）：它只按名查表、
+  无顺序需求——顺序由主 YAML 的 `tabs[].groups[].keys[]` 数组承载，渲染时
+  以主文件的下标为准、来这里取文本，两者职责分离。
 - 加新语言：生成器 `PO_FILES` 加一个 po 路径，重跑后每种语言自动出现在
   每个字段下。
 - 已知限制：machine limits 12 个 key 的 full_label/tooltip 在源码中由
@@ -310,7 +319,7 @@ optgroup->append_single_option_line("my_new_setting");
 ### 4. 同步 Schema + 翻译
 
 ```bash
-python scripts/schema_gen/generate_schema.py
+python src/projectcore/schema/script/generate_schema.py
 ```
 
 - 中文翻译：向 `localization/i18n/zh_CN/Snapmaker_Orca_zh_CN.po` 补

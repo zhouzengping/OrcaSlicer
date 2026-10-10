@@ -64,6 +64,7 @@ enum Class ConfigMetaMode
 struct IConfigMetaData
 {
     virtual ~IConfigMetaData() = default;
+    virtual std::string key() const = 0;                                    // 配置项的 key 名（find 的对偶；布局遍历后查展示文本用）
     virtual ConfigMetaType type() const = 0;                                // 返回配置项的类型，例如 "int", "float", "string" 等
     virtual ConfigMetaScope scope() const = 0;                              // 返回配置项的作用域，例如 "machine", "print" 等
     virtual ConfigMetaMode mode() const = 0;                                // 返回配置项的模式，例如 "normal", "advanced" 等
@@ -73,6 +74,7 @@ struct IConfigMetaData
     virtual SlicerVariant values() const = 0;                               // 返回配置项的可选值列表,例如vector<std::string> 或 vector<int> 等
     virtual SlicerVariant min() const = 0;                                  // 返回配置项的最小值
     virtual SlicerVariant max() const = 0;                                  // 返回配置项的最大值
+    virtual std::string hyperlinkUrl() const = 0;                           // 返回配置项超链接
     virtual SlicerVariant property(const std::string& propertyKey) const = 0;   // 返回配置项的特定属性值 
 };
 
