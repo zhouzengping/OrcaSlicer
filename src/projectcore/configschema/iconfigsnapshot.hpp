@@ -15,7 +15,7 @@ enum ConfigScopeType
     PrintRegion,
     Machine,
     Print,
-    Gcode,
+    GCode,
 };
 
 
@@ -44,7 +44,7 @@ static std::unordered_map<std::string, ConfigScopeType> s_configScopeTypeMap = {
     {"print_region",    ConfigScopeType::PrintRegion},
     {"machine",         ConfigScopeType::Machine},
     {"print",           ConfigScopeType::Print},
-    {"gcode",           ConfigScopeType::Gcode},
+    {"gcode",           ConfigScopeType::GCode},
 };
 
 

@@ -182,6 +182,8 @@ public:
     bool append(const Percent& v);
     bool append(const FloatOrPercent& v);
     bool append(const EnumValue& v);
+    bool append_nil();
+    bool append_variant(const SlicerVariant& v);
 
     bool appendvec(const BoolVector& v);
     bool appendvec(const IntVector& v);
@@ -193,9 +195,6 @@ public:
     bool appendvec(const PercentVector& v);
     bool appendvec(const FloatOrPercentVector& v);
     bool appendvec(const EnumVector& v);
-
-    bool append_nil();
-    bool append_variant(const SlicerVariant& v);
 
     bool set_elem(size_t i, bool v);
     bool set_elem(size_t i, int v);
@@ -210,6 +209,9 @@ public:
     bool set_elem(size_t i, const FloatOrPercent& v);
     bool set_elem(size_t i, const EnumValue& v);
     bool set_elem_nil(size_t i);
+
+    void resize(size_t size);
+    void apply(const SlicerVariant& v);
 
     void reset_nil();
 
@@ -242,7 +244,6 @@ private:
         EnumValue
     >;
 
-    // 及作为标量存放1个元素，也作为数组存放多个元素
     struct Storage
     {
         ValueType         type = ValueType::Undef;
@@ -250,6 +251,9 @@ private:
     };
 
     bool append_cell(Cell c, ValueType vector_type);
+
+    template <typename MakeCell>
+    bool append_cells(ValueType vector_type, size_t append_Size, MakeCell make);
 
     bool set_cell_at(size_t i, Cell c, ValueType vector_type);
 
@@ -1679,6 +1683,77 @@ inline bool SlicerVariant::append_variant(const SlicerVariant& v)
     return true;
 }
 
+template <typename MakeCell>
+inline bool SlicerVariant::append_cells(ValueType vector_type, size_t append_Size, MakeCell make)
+{
+    assert(m_data && m_data->type == vector_type);
+    if (!m_data || m_data->type != vector_type)
+        return false;
+
+    if (append_Size == 0)
+        return true;
+
+    Storage& dst = unique_storage();
+
+    dst.cells.reserve(dst.cells.size() + append_Size);
+
+    for (size_t i = 0; i < append_Size; ++i)
+        dst.cells.push_back(make(i));
+
+    return true;
+}
+
+inline bool SlicerVariant::appendvec(const BoolVector& v)
+{
+    return append_cells(ValueType::Bools, v.size(), [&v](size_t i) { return Cell(v[i]); });
+}
+
+inline bool SlicerVariant::appendvec(const IntVector& v)
+{
+    // Explicitly cast to int64_t: Direct Cell(int) will cause ambiguity in construction with bool/double
+    return append_cells(ValueType::Ints, v.size(), [&v](size_t i) { return Cell(int64_t(v[i])); });
+}
+
+inline bool SlicerVariant::appendvec(const Int64Vector& v)
+{
+    return append_cells(ValueType::Ints, v.size(), [&v](size_t i) { return Cell(v[i]); });
+}
+
+inline bool SlicerVariant::appendvec(const FloatVector& v)
+{
+    return append_cells(ValueType::Floats, v.size(), [&v](size_t i) { return Cell(v[i]); });
+}
+
+inline bool SlicerVariant::appendvec(const StringVector& v)
+{
+    return append_cells(ValueType::Strings, v.size(), [&v](size_t i) { return Cell(v[i]); });
+}
+
+inline bool SlicerVariant::appendvec(const PointVector& v)
+{
+    return append_cells(ValueType::Points, v.size(), [&v](size_t i) { return Cell(v[i]); });
+}
+
+inline bool SlicerVariant::appendvec(const Point3Vector& v)
+{
+    return append_cells(ValueType::Points3, v.size(), [&v](size_t i) { return Cell(v[i]); });
+}
+
+inline bool SlicerVariant::appendvec(const PercentVector& v)
+{
+    return append_cells(ValueType::Percents, v.size(), [&v](size_t i) { return Cell(v[i]); });
+}
+
+inline bool SlicerVariant::appendvec(const FloatOrPercentVector& v)
+{
+    return append_cells(ValueType::FloatOrPercents, v.size(), [&v](size_t i) { return Cell(v[i]); });
+}
+
+inline bool SlicerVariant::appendvec(const EnumVector& v)
+{
+    return append_cells(ValueType::Enums, v.size(), [&v](size_t i) { return Cell(v[i]); });
+}
+
 inline bool SlicerVariant::append_cell(Cell c, ValueType vector_type)
 {
     assert(m_data && vector_type == m_data->type);
@@ -1782,6 +1857,74 @@ inline bool SlicerVariant::set_elem_nil(size_t i)
     s.cells[i] = Cell();
 
     return true;
+}
+
+inline void SlicerVariant::resize(size_t size)
+{
+    const size_t n = storage().cells.size();
+
+    if (size == n)
+        return;
+
+    Storage& s = unique_storage();
+
+    if (size < n)
+    {
+        // size == 0 erases everything
+        s.cells.erase(s.cells.begin() + size, s.cells.end());
+    }
+    else if (!s.cells.empty())
+    {
+        const Cell fill = s.cells.front();
+        s.cells.resize(size, fill);
+    }
+}
+
+inline void SlicerVariant::apply(const SlicerVariant& v)
+{
+    if (this == &v)
+        return;
+
+    if (is_undef())
+    {
+        if (!v.is_undef())
+            *this = v;
+        return;
+    }
+
+    if (v.is_undef())
+        return;
+
+    assert(v.type() == type());
+    if (v.type() != type())
+        return;
+
+    const Storage& src = v.storage();
+    const size_t   n   = src.cells.size();
+
+    Storage& dst = unique_storage();
+
+    for (size_t i = 0; i < n; ++i)
+    {
+        const Cell& c = src.cells[i];
+
+        if (i < dst.cells.size())
+        {
+            if (!std::holds_alternative<NilType>(c))
+                dst.cells[i] = c;
+        }
+        else if (!std::holds_alternative<NilType>(c))
+        {
+            dst.cells.push_back(c);
+        }
+        else
+        {
+            dst.cells.push_back(Cell());
+        }
+    }
+
+    if (dst.cells.size() > n)
+        dst.cells.erase(dst.cells.begin() + n, dst.cells.end());
 }
 
 inline void SlicerVariant::reset_nil()
