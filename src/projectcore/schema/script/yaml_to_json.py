@@ -2,10 +2,10 @@
 """Convert the schema YAMLs to JSON for format comparison.
 
 Writes <name>.json next to each <name>.yaml under src/projectcore/schema/
-(main files and i18n/). Order information lives in arrays (tabs/groups/keys),
-which stay ordered in JSON as well; mapping fields are property bags whose
-order is not guaranteed (the serializer preserves insertion order for
-readability only).
+(main files and i18n/). Order information lives in arrays (layouts tabs/
+groups/keys and the metadata list), which stay ordered in JSON as well;
+mapping fields are property bags whose order is not guaranteed (the
+serializer preserves insertion order for readability only).
 
 Run:  python src/projectcore/schema/script/yaml_to_json.py [file.yaml ...]
       (no args = convert every .yaml under src/projectcore/schema/)
@@ -20,6 +20,10 @@ import yaml
 # from __file__ land on the repository root
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 SCHEMA_DIR = os.path.join(ROOT, "src", "projectcore", "schema")
+
+# hand-written drafts live beside the generated files; they are not part of
+# the pipeline and get no JSON twin
+EXCLUDE = {"filament2.yaml"}
 
 
 def convert(path):
@@ -38,7 +42,7 @@ def main():
     paths = [os.path.join(ROOT, a) for a in args] if args else [
         os.path.join(dp, fn)
         for dp, _dn, fns in os.walk(SCHEMA_DIR)
-        for fn in fns if fn.endswith(".yaml")
+        for fn in fns if fn.endswith(".yaml") and fn not in EXCLUDE
     ]
     for p in sorted(paths):
         if not os.path.isfile(p):

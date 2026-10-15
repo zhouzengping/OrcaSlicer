@@ -8,7 +8,10 @@ Sources of truth:
 
 Outputs (src/projectcore/schema/):
   - print.yaml / filament.yaml / printer.yaml : keys reachable in preset tab UI
+    (layouts: page structure as plain key names + metadata: per-key semantics,
+    UI props nested under each entry's ui object)
   - hidden.yaml : keys defined in PrintConfigDef but not shown in any preset tab
+    (metadata only -- no layout)
 
 Run:  python src/projectcore/schema/script/generate_schema.py
 """
@@ -891,14 +894,19 @@ def fmt_scalar(v):
     return yq(str(v))
 
 
-PROP_ORDER = ["type", "widget", "edit_enable", "scope", "mode", "nullable",
-              "default", "min", "max", "values"]
+# metadata 条目的两级字段：语义/取值字段平铺在条目上，纯 UI 属性收纳进
+# 条目的 ui 子对象（mode/widget/edit_enable），与 layouts/metadata 分离的
+# 结构对齐——存储语义和渲染开关各归各层
+META_ORDER = ["type", "scope", "nullable", "default", "min", "max", "values"]
+UI_ORDER = ["mode", "widget", "edit_enable"]
+# internal canonical merge order (main() 合并 defs 与 UI props 时用)
+PROP_ORDER = META_ORDER + UI_ORDER
 
 
-def emit_option(out, indent, key, props):
+def emit_metadata_entry(out, indent, key, props):
     pad = " " * indent
     out.append("%s- key: %s" % (pad, key))
-    for k in PROP_ORDER:
+    for k in META_ORDER:
         if k not in props:
             continue
         v = props[k]
@@ -906,26 +914,24 @@ def emit_option(out, indent, key, props):
             out.append("%s  %s: [%s]" % (pad, k, ", ".join(fmt_scalar(x) for x in v)))
         else:
             out.append("%s  %s: %s" % (pad, k, fmt_scalar(v)))
+    ui_props = [k for k in UI_ORDER if k in props]
+    if ui_props:
+        out.append("%s  ui:" % pad)
+        for k in ui_props:
+            out.append("%s    %s: %s" % (pad, k, fmt_scalar(props[k])))
 
 
 # per-key field reference shared by the preset and hidden YAML headers:
-# one synthetic entry carrying every property PROP_ORDER can emit
+# one synthetic metadata entry carrying every field META_ORDER/UI_ORDER can emit
 KEY_FIELD_NOTES = [
-    "#   example_key:              # 合成全部字段的示例，实际 key 只带其中子集",
+    "#   - key: example_key        # 合成全部字段的示例，实际条目只带其中子集",
     "#     type: \"enum\"            # 存储/序列化类型（ConfigOption 子类）；复数形",
     "#                             # （strings/floats/bools/...）= per-extruder 向量，",
     "#                             # default 必须是数组，每个耗材槽一个元素（≠ 多选）",
-    "#     widget: \"combobox\"      # UI 渲染控件，与 type 正交：editline 单行输入 /",
-    "#                             # textarea 多行 / combobox 严格下拉（硬枚举）/",
-    "#                             # combobox_edit 可输入下拉（软枚举）/ checkbox 勾选 /",
-    "#                             # checkbox_override_edit 勾选门控编辑 / color 颜色 /",
-    "#                             # edit_serialized 序列化串 / point 坐标",
-    "#     edit_enable: true       # false = UI 只读（源码 readonly = true）",
     "#     scope: \"print_object\"   # 切片侧类型边界 = 所属 StaticPrintConfig 类：",
     "#                             # print_object 对象级 / print_region 部件级 / machine",
     "#                             # 机器限制 / gcode G-code 输出期 / print 全局工艺 /",
     "#                             # none preset 元数据",
-    "#     mode: \"advanced\"        # UI 显示层级：simple / advanced / develop（缺省 simple）",
     "#     nullable: true          # 值可为 null = 「自动 / 不覆盖」而非 0；仅 Setting",
     "#                             # Overrides 回抽覆盖 key 出现，default 固定 [null]",
     "#     default: \"aligned\"      # 默认值；float_or_percent 百分比写带引号字符串",
@@ -933,18 +939,27 @@ KEY_FIELD_NOTES = [
     "#     min: 0                  # 连续值域下界（缺省 = 不限）",
     "#     max: 100                # 连续值域上界",
     "#     values: [\"a\", \"b\"]      # 离散值域（下拉候选），与 min/max 相对，任何 type 可带",
+    "#     ui:                     # UI 属性包：纯渲染开关，与存储语义正交",
+    "#       mode: \"advanced\"      # UI 显示层级：simple / advanced / develop（缺省 simple）",
+    "#       widget: \"combobox\"    # UI 渲染控件：editline 单行输入 / textarea 多行 /",
+    "#                             # combobox 严格下拉（硬枚举）/ combobox_edit 可输入",
+    "#                             # 下拉（软枚举）/ checkbox 勾选 / checkbox_override_edit",
+    "#                             # 勾选门控编辑 / color 颜色 / edit_serialized 序列化串 /",
+    "#                             # point 坐标",
+    "#       edit_enable: true     # false = UI 只读（源码 readonly = true）",
 ]
 
 # header field reference shared by the preset YAMLs (print/filament/printer)
 PRESET_FIELD_NOTES = [
-    "# 预设 schema：页面结构 + 每个 key 的语义与取值；展示层文本/翻译在 i18n/*.yaml。",
-    "# 层级：tabs[].groups[].keys[]——三层均为数组，顺序即 UI 显示顺序（数组在",
-    "# YAML/JSON 规范中保证有序，消费端按下标渲染；mapping 不保证顺序，仅用于",
-    "# key 条目内的属性包）。完整文档见 README.md。",
+    "# 预设 schema：布局与元数据分离。layouts.tabs[].groups[].keys[] 只承载页面",
+    "# 结构——keys 是纯 key 名数组，顺序即 UI 显示顺序（数组在 YAML/JSON 规范中",
+    "# 保证有序，消费端按下标渲染）；每个 key 的语义与取值在平行的 metadata 节，",
+    "# 按 key 名关联（同文件内 key 唯一，布局引用必须有对应 metadata 条目）。",
+    "# 展示层文本/翻译在 i18n/*.yaml。完整文档见 README.md。",
     "# 槽位绑定约定：Extruder %d 模板页内的向量 key 一律绑定第 i 个挤出机槽位",
     "# （源码挂载全部带 extruder_idx 索引，由页面语义蕴含，不再逐 key 标记）；",
     "# filament 页的向量 key 绑定当前活跃耗材槽。",
-    "# 每个 key 的字段说明：",
+    "# metadata 条目字段说明：",
 ] + KEY_FIELD_NOTES
 
 
@@ -952,12 +967,16 @@ def emit_preset_yaml(path, name, tabs):
     out = ["# Generated by src/projectcore/schema/script/generate_schema.py -- do not edit by hand",
            ] + PRESET_FIELD_NOTES + [
            "version: 0.1.0",
-           "tabs:"]
+           "layouts:",
+           "  tabs:"]
+    # metadata 条目按布局遍历序输出（tab -> group -> key），与旧结构的
+    # key 出现顺序一致；keys 本体在布局里只留纯 key 名
+    ordered = []
     nkeys = 0
     seen_keys = set()
     for tab, groups in tabs.items():
-        out.append("  - name: %s" % yq(tab))
-        out.append("    groups:")
+        out.append("    - name: %s" % yaml_text(tab))
+        out.append("      groups:")
         seen_groups = set()
         for group, keys in groups.items():
             # arrays don't reject duplicate names the way mapping keys do --
@@ -965,27 +984,33 @@ def emit_preset_yaml(path, name, tabs):
             if group in seen_groups:
                 warnings.append("duplicate group in %s.yaml tab %s: %s" % (name, tab, group))
             seen_groups.add(group)
-            out.append("      - name: %s" % yq(group))
+            out.append("        - name: %s" % yaml_text(group))
             if keys:
-                out.append("        keys:")
+                out.append("          keys:")
                 for key, props in keys.items():
                     if key in seen_keys:
                         warnings.append("duplicate key in %s.yaml: %s" % (name, key))
                     seen_keys.add(key)
-                    emit_option(out, 10, key, props)
+                    out.append("            - %s" % key)
+                    ordered.append((key, props))
                     nkeys += 1
             else:
-                out.append("        keys: []")
+                out.append("          keys: []")
+    if ordered:
+        out.append("metadata:")
+        for key, props in ordered:
+            emit_metadata_entry(out, 2, key, props)
+    else:
+        out.append("metadata: []")
     with open(path, "w", encoding="utf-8", newline="\n") as f:
         f.write("\n".join(out).rstrip() + "\n")
     return nkeys
 
 
 HIDDEN_FIELD_NOTES = [
-    "# PrintConfigDef 中定义、但不出现在任何预设 tab UI 的 key。格式与预设",
-    "# 文件统一（tabs[].groups[].keys[] 三层）：tab/group 名为占位",
-    "# （\"hidden\"/\"undefined\"），无 UI 语义；key 顺序为原 scope 分组的",
-    "# 展开序，scope 信息在每个 key 条目的 scope 字段。",
+    "# PrintConfigDef 中定义、但不出现在任何预设 tab UI 的 key：无布局，",
+    "# 只有 metadata 节（条目格式与预设文件的 metadata 统一）。key 顺序为",
+    "# 原 scope 分组的展开序，scope 信息在每个条目的 scope 字段。",
     "# 每个 key 的字段说明：",
 ] + KEY_FIELD_NOTES
 
@@ -993,21 +1018,23 @@ HIDDEN_FIELD_NOTES = [
 def emit_hidden_yaml(path, scope_groups):
     out = ["# Generated by src/projectcore/schema/script/generate_schema.py -- do not edit by hand",
            ] + HIDDEN_FIELD_NOTES + [
-           "version: 0.1.0",
-           "tabs:",
-           "  - name: %s" % yq("hidden"),
-           "    groups:",
-           "      - name: %s" % yq("undefined"),
-           "        keys:"]
+           "version: 0.1.0"]
     nkeys = 0
     seen_keys = set()
+    entries = []
     for scope, keys in scope_groups.items():
         for key, props in keys.items():
             if key in seen_keys:
                 warnings.append("duplicate key in hidden.yaml: %s" % key)
             seen_keys.add(key)
-            emit_option(out, 10, key, props)
+            entries.append((key, props))
+    if entries:
+        out.append("metadata:")
+        for key, props in entries:
+            emit_metadata_entry(out, 2, key, props)
             nkeys += 1
+    else:
+        out.append("metadata: []")
     with open(path, "w", encoding="utf-8", newline="\n") as f:
         f.write("\n".join(out).rstrip() + "\n")
     return nkeys

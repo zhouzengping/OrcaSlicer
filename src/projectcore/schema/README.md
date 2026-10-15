@@ -15,16 +15,19 @@ python src/projectcore/schema/script/yaml_to_json.py      # 同目录生成 .jso
 | `print.yaml` | 工艺预设（质量/强度/速度/支撑/材料/其他 tab） | `TabPrint::build` |
 | `filament.yaml` | 耗材预设（含 Setting Overrides 页） | `TabFilament::build + add_filament_overrides_page` |
 | `printer.yaml` | 打印机预设（含 Extruder %d 模板页、机器限制） | `TabPrinter::build_fff + build_kinematics_page + build_unregular_pages` |
-| `hidden.yaml` | 不出现在预设 tab 的 key（单页平铺，tab/group 名为占位） | PrintConfigDef 减去上述 UI（已知盲区见文末） |
+| `hidden.yaml` | 不出现在预设 tab 的 key（无布局，仅 metadata 节） | PrintConfigDef 减去上述 UI（已知盲区见文末） |
 | `i18n/{print,filament,printer,hidden}.yaml` | 展示层：label/full_label/tooltip/sidetext/category/enum_labels 的原文 + 各语言翻译 | `PrintConfig.cpp` 的 L() 文本 + `localization/i18n/zh_CN/*.po` |
 
-层级：`tabs[] → groups[] → keys[] → 属性`，四份文件格式统一。
-**三层全部是数组，顺序即 UI 显示顺序**——数组在 YAML/JSON 规范中保证有序，
-消费端按下标渲染；mapping 只用于 key 条目内的属性包（按名访问，无顺序需求）。
-同一 key 在页间/组间移动只影响其数组位置，顺序信息与结构信息合为一体，
-不再需要额外的顺序声明字段。hidden 的 tab/group 名为占位（`"hidden"` /
-`"undefined"`，无 UI 语义），key 顺序为原 scope 分组的展开序，scope 信息
-在每个 key 条目的 `scope` 字段。
+结构：**布局与元数据分离**。`layouts.tabs[] → groups[] → keys[]` 只承载页面
+结构——keys 是**纯 key 名数组**，三层均为数组、顺序即 UI 显示顺序（数组在
+YAML/JSON 规范中保证有序，消费端按下标渲染）；每个 key 的语义与取值在平行的
+`metadata[]` 节，按 key 名关联。同一文件内 key 唯一，布局引用必须有对应的
+metadata 条目（生成器校验并记入 warnings）。同一 key 在页间/组间移动只影响
+其布局位置。metadata 条目内，存储语义字段（type/scope/nullable/default/
+min/max/values）平铺在条目上，纯 UI 属性（mode/widget/edit_enable）收纳在
+`ui` 子对象。`hidden.yaml` 无布局（key 不出现在任何预设 tab），只有
+`metadata` 节，key 顺序为原 scope 分组的展开序，scope 信息在每个条目的
+`scope` 字段。
 
 生成器对数组做重复名检查（tab 名 / 组名 / key 名各自唯一，重复记入 warnings）。
 printer 页序按 Marlin 类 gcode_flavor 的首次构建顺序输出（非 Marlin 时 Extruder 块会
@@ -58,33 +61,38 @@ printer 页序按 Marlin 类 gcode_flavor 的首次构建顺序输出（非 Marl
 | `enum` | 枚举名，必须落在 `values` 内。**对外形式永远是字符串**：C++ 枚举整数值是实现细节，不进入任何序列化格式（ini/3MF/preset 均为字符串），解析侧不做数字转换 | `"aligned"` | `seam_position` |
 
 ```yaml
-layer_height:
-  type: "float"
-  widget: "editline"
-  scope: "print_object"
-  default: 0.2
-  min: 0
+metadata:
+  - key: layer_height
+    type: "float"
+    scope: "print_object"
+    default: 0.2
+    min: 0
+    ui:
+      widget: "editline"
 
-scarf_angle_threshold:
-  type: "int"
-  widget: "editline"
-  scope: "print_region"
-  default: 155
-  min: 0
-  max: 180
+  - key: scarf_angle_threshold
+    type: "int"
+    scope: "print_region"
+    default: 155
+    min: 0
+    max: 180
+    ui:
+      widget: "editline"
 
-infill_anchor:
-  type: "float_or_percent"
-  widget: "combobox_edit"
-  scope: "print_region"
-  default: "400%"          # 百分比形态；数值形态见 line_width（default: 0）
+  - key: infill_anchor
+    type: "float_or_percent"
+    scope: "print_region"
+    default: "400%"          # 百分比形态；数值形态见 line_width（default: 0）
+    ui:
+      widget: "combobox_edit"
 
-seam_position:
-  type: "enum"
-  widget: "combobox"
-  scope: "print_object"
-  default: "aligned"       # 必须是 values 之一（硬枚举）
-  values: ["nearest", "aligned", "aligned_back", "back", "random"]
+  - key: seam_position
+    type: "enum"
+    scope: "print_object"
+    default: "aligned"       # 必须是 values 之一（硬枚举）
+    values: ["nearest", "aligned", "aligned_back", "back", "random"]
+    ui:
+      widget: "combobox"
 ```
 
 ### 向量类型（per-extruder，default 一律数组）
@@ -100,23 +108,27 @@ seam_position:
 | `enums` | 枚举名 | `["95%"]`，元素须在 `values` 内 | `overhang_fan_threshold` |
 
 ```yaml
-filament_type:
-  type: "strings"
-  widget: "combobox_edit"
-  default: ["PLA"]                          # 每个耗材槽一个材料名
-  values: ["ABS", "ASA", "PLA", "PETG", ...]
+metadata:
+  - key: filament_type
+    type: "strings"
+    default: ["PLA"]                          # 每个耗材槽一个材料名
+    values: ["ABS", "ASA", "PLA", "PETG", ...]
+    ui:
+      widget: "combobox_edit"
 
-overhang_fan_threshold:
-  type: "enums"
-  widget: "combobox"
-  default: ["95%"]
-  values: ["0%", "10%", "25%", "50%", "75%", "95%"]
+  - key: overhang_fan_threshold
+    type: "enums"
+    default: ["95%"]
+    values: ["0%", "10%", "25%", "50%", "75%", "95%"]
+    ui:
+      widget: "combobox"
 
-initial_layer_travel_speed:
-  type: "floats_or_percents"
-  widget: "editline"
-  default: ["100%"]
-  min: 1
+  - key: initial_layer_travel_speed
+    type: "floats_or_percents"
+    default: ["100%"]
+    min: 1
+    ui:
+      widget: "editline"
 ```
 
 > **向量 ≠ 多选**：数组的长度对齐耗材槽数量（与 `filament_ids` 等长），不是让用户多选。
@@ -178,16 +190,20 @@ initial_layer_travel_speed:
 ### combobox 与 combobox_edit 的本质区别
 
 ```yaml
-seam_position:                      # combobox：硬枚举
+- key: seam_position                # combobox：硬枚举
   type: "enum"
   values: ["nearest", "aligned", ...]
   # 值必须落在 values 内——UI 不提供输入口，序列化层强约束
+  ui:
+    widget: "combobox"
 
-filament_type:                      # combobox_edit：软枚举
+- key: filament_type                # combobox_edit：软枚举
   type: "strings"                   # 本质是自由字符串
   values: ["ABS", "ASA", ...]
   # values 只是候选建议——厂商 preset 可写 "PLA-HF" 等列表外的值，
   # UI 渲染成可输入的下拉，切片代码按字符串透传/比较
+  ui:
+    widget: "combobox_edit"
 ```
 
 选择依据：第三方需要扩展值域（材料名、自定义档位）→ `combobox_edit`（软枚举）；
@@ -197,13 +213,16 @@ filament_type:                      # combobox_edit：软枚举
 
 ## 其他 key 属性
 
-| 属性 | 含义 | 取值 / 来源 |
-|---|---|---|
-| `edit_enable` | 是否允许编辑（占位给联动禁用场景，如换料时锁定切料参数） | `true` / `false`；默认全 `true`，仅源码 `readonly = true` 的 key 为 `false`（当前唯一：`start_end_points`，值来自 `change_filament_gcode`，只展示） |
-| `scope` | 切片侧类型边界（StaticPrintConfig 类归属） | `print_object / print_region / machine / gcode / print / none`（`none` = preset 元数据等） |
-| `mode` | UI 显示层级 | `simple / advanced / develop` |
-| `values` | 离散值域（下拉候选）；与 `min/max`（连续值域）相对，任何 type 都可能带 | 数组 |
-| `min` / `max` | 连续值域 | 数值 |
+metadata 条目内字段分两层：存储语义字段（`scope`/`values`/`min`/`max`/…）平铺在
+条目上，纯 UI 属性收纳在条目的 `ui` 子对象（`widget`/`mode`/`edit_enable`）。
+
+| 属性 | 层 | 含义 | 取值 / 来源 |
+|---|---|---|---|
+| `edit_enable` | ui | 是否允许编辑（占位给联动禁用场景，如换料时锁定切料参数） | `true` / `false`；默认全 `true`，仅源码 `readonly = true` 的 key 为 `false`（当前唯一：`start_end_points`，值来自 `change_filament_gcode`，只展示） |
+| `scope` | 条目 | 切片侧类型边界（StaticPrintConfig 类归属） | `print_object / print_region / machine / gcode / print / none`（`none` = preset 元数据等） |
+| `mode` | ui | UI 显示层级 | `simple / advanced / develop` |
+| `values` | 条目 | 离散值域（下拉候选）；与 `min/max`（连续值域）相对，任何 type 都可能带 | 数组 |
+| `min` / `max` | 条目 | 连续值域 | 数值 |
 
 **槽位绑定约定**（无字段标记，由页面语义蕴含）：`Extruder %d` 模板页内的向量 key
 （floats/points/bools/... ）一律绑定第 i 个挤出机槽位（源码挂载全部带
@@ -251,7 +270,7 @@ infill_lock_depth:
   动态页 `Extruder %d` 同样收录在 `tabs:` 节——`%d` 原样保留，GUI 先查表取
   模板串再格式化实例编号。
 - **i18n 文件本身是 mapping**（顶层 `keys:` 按 key 名索引）：它只按名查表、
-  无顺序需求——顺序由主 YAML 的 `tabs[].groups[].keys[]` 数组承载，渲染时
+  无顺序需求——顺序由主 YAML 的 `layouts.tabs[].groups[].keys[]` 数组承载，渲染时
   以主文件的下标为准、来这里取文本，两者职责分离。
 - 加新语言：生成器 `PO_FILES` 加一个 po 路径，重跑后每种语言自动出现在
   每个字段下。
