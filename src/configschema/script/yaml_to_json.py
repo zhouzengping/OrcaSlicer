@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Convert the schema YAMLs to JSON for format comparison.
 
-Writes <name>.json next to each <name>.yaml under src/projectcore/schema/
+Writes <name>.json next to each <name>.yaml under src/configschema/
 (main files and i18n/). Order information lives in arrays (layouts tabs/
 groups/keys and the metadata list), which stay ordered in JSON as well;
 mapping fields are property bags whose order is not guaranteed (the
 serializer preserves insertion order for readability only).
 
-Run:  python src/projectcore/schema/script/yaml_to_json.py [file.yaml ...]
-      (no args = convert every .yaml under src/projectcore/schema/)
+Run:  python src/configschema/script/yaml_to_json.py [file.yaml ...]
+      (no args = convert every .yaml under src/configschema/)
 """
 import json
 import os
@@ -16,10 +16,10 @@ import sys
 
 import yaml
 
-# script lives at <root>/src/projectcore/schema/script/ -- five dirname hops
+# script lives at <root>/src/configschema/script/ -- four dirname hops
 # from __file__ land on the repository root
-ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
-SCHEMA_DIR = os.path.join(ROOT, "src", "projectcore", "schema")
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+SCHEMA_DIR = os.path.join(ROOT, "src", "configschema")
 
 # hand-written drafts live beside the generated files; they are not part of
 # the pipeline and get no JSON twin

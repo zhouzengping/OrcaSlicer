@@ -1,10 +1,15 @@
 #pragma once
 
 
+#include <string>
 #include <unordered_map>
 
-// 用于表示配置元数据类型的枚举
-enum Class ConfigMetaType
+#include "slicervariant.hpp"
+
+namespace ConfigSchema
+{
+
+enum class ConfigMetaType
 {
     String = 0,
     Strings,
@@ -20,14 +25,13 @@ enum Class ConfigMetaType
     FloatOrPercents,
     Enum,
     Enums,
-    Point,      // 2D point
-    Points,     // 2D points
-    Point3,     // 3D point
-    Points3,    // 3D points
+    Point,
+    Points,
+    Point3,
+    Points3,
 };
 
-// 用于表示配置元数据的UI控件类型的枚举
-enum Class ConfigMetaWidgetType
+enum class ConfigMetaWidgetType
 {
     EditLine = 0,
     TextArea,
@@ -41,8 +45,7 @@ enum Class ConfigMetaWidgetType
     FilePicker,
 };
 
-// 用于表示配置元数据的作用域的枚举
-enum Class ConfigMetaScope
+enum class ConfigMetaScope
 {
     None = 0,
     PrintObject,
@@ -53,7 +56,7 @@ enum Class ConfigMetaScope
 };
 
 
-enum Class ConfigMetaMode
+enum class ConfigMetaMode
 {
     Simple = 0,
     Advanced,
@@ -64,22 +67,22 @@ enum Class ConfigMetaMode
 struct IConfigMetaData
 {
     virtual ~IConfigMetaData() = default;
-    virtual std::string key() const = 0;                                    // 配置项的 key 名（find 的对偶；布局遍历后查展示文本用）
-    virtual ConfigMetaType type() const = 0;                                // 返回配置项的类型，例如 "int", "float", "string" 等
-    virtual ConfigMetaScope scope() const = 0;                              // 返回配置项的作用域，例如 "machine", "print" 等
-    virtual ConfigMetaMode mode() const = 0;                                // 返回配置项的模式，例如 "normal", "advanced" 等
-    virtual ConfigMetaWidgetType widget() const = 0;                        // 返回配置项的 UI 控件类型，例如 "slider", "checkbox", "dropdown" 等
-    virtual bool editEnabled() const = 0;                                   // 返回配置项是否可编辑
-    virtual SlicerVariant defaultValue() const = 0;                         // 返回配置项的默认值
-    virtual SlicerVariant values() const = 0;                               // 返回配置项的可选值列表,例如vector<std::string> 或 vector<int> 等
-    virtual SlicerVariant min() const = 0;                                  // 返回配置项的最小值
-    virtual SlicerVariant max() const = 0;                                  // 返回配置项的最大值
-    virtual std::string hyperlinkUrl() const = 0;                           // 返回配置项超链接
-    virtual SlicerVariant property(const std::string& propertyKey) const = 0;   // 返回配置项的特定属性值 
+    virtual std::string key() const = 0;
+    virtual ConfigMetaType type() const = 0;
+    virtual ConfigMetaScope scope() const = 0;
+    virtual ConfigMetaMode mode() const = 0;
+    virtual ConfigMetaWidgetType widget() const = 0;
+    virtual bool editEnabled() const = 0;
+    virtual SlicerVariant defaultValue() const = 0;
+    virtual SlicerVariant values() const = 0;
+    virtual SlicerVariant min() const = 0;
+    virtual SlicerVariant max() const = 0;
+    virtual std::string hyperlinkUrl() const = 0;
+    virtual SlicerVariant property(const std::string& propertyKey) const = 0;
 };
 
 
-static std::unordered_map<std::string, ConfigMetaType> s_configMetaTypeMap = {
+inline std::unordered_map<std::string, ConfigMetaType> s_configMetaTypeMap = {
     {"string",                  ConfigMetaType::String},
     {"strings",                 ConfigMetaType::Strings},
     {"int",                     ConfigMetaType::Int},
@@ -101,7 +104,7 @@ static std::unordered_map<std::string, ConfigMetaType> s_configMetaTypeMap = {
 };
 
 
-static std::unordered_map<std::string, ConfigMetaWidgetType> s_configMetaWidgetTypeMap = {
+inline std::unordered_map<std::string, ConfigMetaWidgetType> s_configMetaWidgetTypeMap = {
     {"editline",                ConfigMetaWidgetType::EditLine},
     {"textarea",                ConfigMetaWidgetType::TextArea},
     {"editserialized",          ConfigMetaWidgetType::EditSerialized},
@@ -115,7 +118,7 @@ static std::unordered_map<std::string, ConfigMetaWidgetType> s_configMetaWidgetT
 };
 
 
-static std::unordered_map<std::string, ConfigMetaScope> s_configMetaScopeMap = {
+inline std::unordered_map<std::string, ConfigMetaScope> s_configMetaScopeMap = {
     {"none",                    ConfigMetaScope::None},
     {"print_object",            ConfigMetaScope::PrintObject},
     {"print_region",            ConfigMetaScope::PrintRegion},
@@ -123,3 +126,12 @@ static std::unordered_map<std::string, ConfigMetaScope> s_configMetaScopeMap = {
     {"print",                   ConfigMetaScope::Print},
     {"gcode",                   ConfigMetaScope::Gcode}
 };
+
+
+inline std::unordered_map<std::string, ConfigMetaMode> s_configMetaModeMap = {
+    {"simple",                  ConfigMetaMode::Simple},
+    {"advanced",                ConfigMetaMode::Advanced},
+    {"develop",                 ConfigMetaMode::Develop}
+};
+
+}

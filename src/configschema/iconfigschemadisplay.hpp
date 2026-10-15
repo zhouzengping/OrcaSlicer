@@ -3,10 +3,11 @@
 #include <list>
 #include <string>
 
-#include "configmetadata.hpp"
+#include "iconfigmetadata.hpp"
 
-// key 级展示文本：字典式查表，fieldId = "label" / "full_label" / "tooltip" / "sidetext" / "category"；
-// lang 为空串取原文，无译文回落原文
+namespace ConfigSchema
+{
+
 struct IConfigSchemaI18N
 {
     virtual ~IConfigSchemaI18N() = default;
@@ -52,3 +53,5 @@ struct IConfigSchemaDisplay
 
     virtual std::list<IConfigSchemaTab*> tabs() const = 0;
 };
+
+}

@@ -46,7 +46,6 @@ struct EnumValue
 };
 
 
-// FNV-1a 64-bit offset basis / prime, the constants behind hash_mix().
 constexpr size_t g_hashBasis = 1469598103934665603ULL;
 constexpr size_t g_hashPrime = 1099511628211ULL;
 
@@ -70,13 +69,13 @@ public:
         Percent = 0x0005,            Percents   = 0x1005,
         FloatOrPercent = 0x0006,     FloatOrPercents = 0x1006,
         Enum    = 0x0007,            Enums      = 0x1007,
-        Point   = 0x0008,            Points     = 0x1008,    // 2D points
-        Point3  = 0x0009,            Points3    = 0x1009,    // 3D points
+        Point   = 0x0008,            Points     = 0x1008,
+        Point3  = 0x0009,            Points3    = 0x1009,
     };
     using Point                = Slic3r::Vec2d;
     using Point3               = Slic3r::Vec3d;
     using StringVector         = std::vector<std::string>;
-    using BoolVector           = std::vector<unsigned char>;  // mirrors legacy ConfigOptionBools (ConfigOptionVector<unsigned char>), avoids std::vector<bool>
+    using BoolVector           = std::vector<unsigned char>;
     using IntVector            = std::vector<int>;
     using Int64Vector          = std::vector<int64_t>;
     using FloatVector          = std::vector<double>;
@@ -90,14 +89,13 @@ public:
     static const std::unordered_map<SlicerVariant::ValueType, const char*> g_valueTypeNameMap;
 
 public:
-    SlicerVariant() = default;  // nil
+    SlicerVariant() = default;
     SlicerVariant(const SlicerVariant& rhs);
     SlicerVariant(SlicerVariant&& rhs) noexcept;
     SlicerVariant& operator=(const SlicerVariant& rhs);
     SlicerVariant& operator=(SlicerVariant&& rhs) noexcept;
 
     SlicerVariant(bool v);
-    // int 有点特殊，先写3个重载，看使用情况再补充
     SlicerVariant(int v);
     SlicerVariant(int64_t v);
     SlicerVariant(size_t v);
@@ -125,7 +123,6 @@ public:
 
     bool is_undef() const;
 
-    // is_nil(): 标量是空，或者数组元素全部为空.
     bool is_nil() const;
 
     bool is_scalar() const;
@@ -185,6 +182,8 @@ public:
     bool append_nil();
     bool append_variant(const SlicerVariant& v);
 
+    bool append_parse(ValueType elem, const std::string& s);
+
     bool appendvec(const BoolVector& v);
     bool appendvec(const IntVector& v);
     bool appendvec(const Int64Vector& v);
@@ -232,7 +231,7 @@ public:
 private:
     using NilType = std::monostate;
     using Cell = std::variant<
-        NilType,    // nil
+        NilType,
         bool,
         int64_t,
         double,
@@ -298,15 +297,11 @@ private:
 
     static std::optional<Cell> parse_cell(ValueType t, std::string_view s);
 
-    // "nil" carries the override marker only for the types the legacy
-    // system made nullable (numbers, bools, enums - ConfigOptionFloatsNullable
-    // & co); a string cell keeps a literal "nil", points are never nullable.
     static bool nil_keyword_applies(ValueType t);
     static bool parse_point2(std::string_view s, Point& out);
     static bool parse_point3(std::string_view s, Point3& out);
     static std::string serialize_cell(const Cell& c, bool as_vector_elem, ValueType elem);
 
-    // text-formatting / splitting helpers backing the serialization members
     static const char* skip_spaces(const char* p);
     static bool only_spaces_left(const char* p);
     static std::string format_double(double v);
@@ -516,7 +511,6 @@ inline int64_t SlicerVariant::cell_to_int(const Cell& c, ValueType t, bool* ok)
             constexpr double int64_min = static_cast<double>(INT64_MIN);
             constexpr double int64_end = static_cast<double>(INT64_MAX);
 
-            // only exact integers inside the int64 range convert
             if (*d == floor(*d) && *d >= int64_min && *d < int64_end)
                 return (int64_t)*d;
         }
@@ -588,7 +582,6 @@ inline double SlicerVariant::cell_to_double(const Cell& c, ValueType t, bool* ok
 
 inline std::string SlicerVariant::cell_to_string(const Cell& c, ValueType t, bool* ok)
 {
-    // string never auto-converts; serialize() is the value -> text direction
     const std::string* s = t == ValueType::String ? std::get_if<std::string>(&c) : nullptr;
 
     if (ok)
@@ -711,7 +704,6 @@ inline EnumValue SlicerVariant::cell_to_enum(const Cell& c, ValueType t, bool* o
     return EnumValue();
 }
 
-// ---------- comparison / hashing ----------
 inline bool SlicerVariant::cell_equal(const Cell& a, const Cell& b)
 {
     if (a.index() != b.index())
@@ -782,10 +774,6 @@ inline uint64_t SlicerVariant::double_bits(double v)
 
 inline size_t SlicerVariant::hash_cell(const Cell& c)
 {
-    // std::visit hands us the active alternative directly typed - no
-    // hand-kept index numbers to drift when the variant changes. The active
-    // index still serves as the type tag; reordering only changes hash
-    // values, never correctness.
     return std::visit([&c](const auto& v) -> size_t {
         using T = std::decay_t<decltype(v)>;
 
@@ -843,11 +831,7 @@ inline size_t SlicerVariant::hash_value(const EnumValue& v)
     return hash_mix(g_hashBasis, (uint32_t)v.index);
 }
 
-// ---------------------------------------------------------------------------
-// SlicerVariant - implementation
-// ---------------------------------------------------------------------------
 
-// ---------- construction ----------
 inline SlicerVariant::SlicerVariant(const SlicerVariant& rhs)
     : m_data(rhs.m_data)
 {
@@ -1069,7 +1053,6 @@ inline SlicerVariant::SlicerVariant(const EnumVector& v)
         s.cells.push_back(Cell(v[i]));
 }
 
-// ---------- type / shape ----------
 inline SlicerVariant::ValueType SlicerVariant::type() const
 {
     return storage().type;
@@ -1156,13 +1139,12 @@ inline bool SlicerVariant::can_convert(ValueType t) const
     case ValueType::Undef:
         return is_undef();
     default:
-        break;  // vector forms don't name a conversion target
+        break;
     }
 
     return ok;
 }
 
-// ---------- scalar gets ----------
 inline bool SlicerVariant::to_bool(bool* ok) const
 {
     return cell_to_bool(scalar_ref(), elem_type_of(storage().type), ok);
@@ -1223,7 +1205,6 @@ inline EnumValue SlicerVariant::to_enum(bool* ok) const
     return cell_to_enum(scalar_ref(), elem_type_of(storage().type), ok);
 }
 
-// ---------- vector gets ----------
 inline SlicerVariant::BoolVector SlicerVariant::bool_vector(bool* ok) const
 {
     BoolVector out;
@@ -1534,7 +1515,6 @@ inline std::vector<EnumValue> SlicerVariant::enum_vector(bool* ok) const
     return out;
 }
 
-// ---------- element gets ----------
 inline bool SlicerVariant::elem_bool(size_t i) const
 {
     return cell_to_bool(elem_ref(i), elem_type_of(storage().type), nullptr);
@@ -1590,7 +1570,6 @@ inline bool SlicerVariant::elem_is_nil(size_t i) const
     return std::holds_alternative<NilType>(elem_ref(i));
 }
 
-// ---------- mutation ----------
 inline bool SlicerVariant::append(bool v)
 {
     return append_cell(Cell(v), ValueType::Bools);
@@ -1710,7 +1689,6 @@ inline bool SlicerVariant::appendvec(const BoolVector& v)
 
 inline bool SlicerVariant::appendvec(const IntVector& v)
 {
-    // Explicitly cast to int64_t: Direct Cell(int) will cause ambiguity in construction with bool/double
     return append_cells(ValueType::Ints, v.size(), [&v](size_t i) { return Cell(int64_t(v[i])); });
 }
 
@@ -1870,7 +1848,6 @@ inline void SlicerVariant::resize(size_t size)
 
     if (size < n)
     {
-        // size == 0 erases everything
         s.cells.erase(s.cells.begin() + size, s.cells.end());
     }
     else if (!s.cells.empty())
@@ -1945,7 +1922,6 @@ inline void SlicerVariant::detach()
     unique_storage();
 }
 
-// ---------- comparison / hash ----------
 inline bool SlicerVariant::operator==(const SlicerVariant& rhs) const
 {
     if (m_data == rhs.m_data)
@@ -1986,7 +1962,6 @@ inline size_t SlicerVariant::hash() const
     return h;
 }
 
-// ---------- private helpers ----------
 inline const SlicerVariant::Cell& SlicerVariant::scalar_ref() const
 {
     const Storage& s = storage();
@@ -2022,7 +1997,6 @@ inline SlicerVariant::Storage& SlicerVariant::unique_storage()
     return *m_data;
 }
 
-// ---------- text helpers ----------
 inline const char* SlicerVariant::skip_spaces(const char* p)
 {
     while (*p != '\0' && isspace((unsigned char)*p))
@@ -2036,8 +2010,6 @@ inline bool SlicerVariant::only_spaces_left(const char* p)
     return *skip_spaces(p) == '\0';
 }
 
-// Shortest round-trip output: %.15g first, then the 17 digits that always
-// identify a double uniquely.
 inline std::string SlicerVariant::format_double(double v)
 {
     char buf[64];
@@ -2060,7 +2032,6 @@ inline std::string SlicerVariant::int64_to_string(int64_t v)
     return std::string(buf);
 }
 
-// c-style escaping for strings: scalar serialization and quoted vector elements
 inline std::string SlicerVariant::escape_cstyle(const std::string& in)
 {
     std::string out;
@@ -2111,7 +2082,7 @@ inline bool SlicerVariant::unescape_cstyle(std::string_view in, std::string& out
 
         ++i;
         if (i >= in.size())
-            return false;  // dangling backslash
+            return false;
 
         switch (in[i])
         {
@@ -2131,16 +2102,13 @@ inline bool SlicerVariant::unescape_cstyle(std::string_view in, std::string& out
             out += '"';
             break;
         default:
-            return false;  // unknown escape
+            return false;
         }
     }
 
     return true;
 }
 
-// Split at top-level separators only: separator and escape characters inside
-// a quoted segment do not split (used by vector parsing). sep may be
-// multi-character; an empty sep never splits.
 inline void SlicerVariant::split_top_level(std::string_view s, std::string_view sep, std::vector<std::string_view>& out)
 {
     size_t start = 0;
@@ -2176,7 +2144,7 @@ inline void SlicerVariant::split_top_level(std::string_view s, std::string_view 
         if (!sep.empty() && s.compare(i, sep.size(), sep) == 0)
         {
             out.push_back(s.substr(start, i - start));
-            i += sep.size() - 1;  // skip the rest of the separator
+            i += sep.size() - 1;
             start = i + 1;
         }
     }
@@ -2184,10 +2152,6 @@ inline void SlicerVariant::split_top_level(std::string_view s, std::string_view 
     out.push_back(s.substr(start));
 }
 
-// A vector string element is quoted only where it would be ambiguous: empty
-// (an empty slot means nil), whitespace, quotes, backslash, or either
-// separator character (',' default, ';' legacy), whichever it ends up
-// joined with.
 inline bool SlicerVariant::string_needs_quotes(std::string_view s)
 {
     if (s.empty())
@@ -2204,7 +2168,6 @@ inline bool SlicerVariant::string_needs_quotes(std::string_view s)
     return false;
 }
 
-// ---------- parse ----------
 inline bool SlicerVariant::parse_point2(std::string_view s, Point& out)
 {
     const std::string str = trim(s);
@@ -2330,8 +2293,6 @@ inline std::optional<SlicerVariant::Cell> SlicerVariant::parse_cell(ValueType t,
 
     case ValueType::String:
     {
-        // quoted form (a vector element as written by serialize_cell): strip
-        // the quotes and unescape
         if (s.size() >= 2 && s.front() == '"' && s.back() == '"')
         {
             std::string out;
@@ -2339,11 +2300,9 @@ inline std::optional<SlicerVariant::Cell> SlicerVariant::parse_cell(ValueType t,
             if (unescape_cstyle(s.substr(1, s.size() - 2), out))
                 return Cell(out);
 
-            return Cell(std::string(s));  // unknown escape: keep verbatim
+            return Cell(std::string(s));
         }
 
-        // bare scalar form, never trimmed (start_gcode round-trips);
-        // cstyle-unescape, an unknown escape keeps the text verbatim
         std::string out;
 
         if (unescape_cstyle(s, out))
@@ -2405,8 +2364,6 @@ inline std::optional<SlicerVariant> SlicerVariant::parse(ValueType t, const std:
     return v;
 }
 
-// Strict by design: one malformed element fails the whole parse. A lenient
-// caller splits the text itself and parses element-wise.
 inline bool SlicerVariant::nil_keyword_applies(ValueType t)
 {
     switch (t)
@@ -2421,6 +2378,24 @@ inline bool SlicerVariant::nil_keyword_applies(ValueType t)
     default:
         return false;
     }
+}
+
+inline bool SlicerVariant::append_parse(ValueType elem, const std::string& s)
+{
+    if (!m_data || !is_vector_type(m_data->type) || elem_type_of(m_data->type) != elem)
+        return false;
+
+    const std::string piece = trim(s);
+
+    if (piece.empty() || (nil_keyword_applies(elem) && piece == g_nilString))
+        return append_cell(Cell(), m_data->type);
+
+    const std::optional<Cell> c = parse_cell(elem, s);
+
+    if (!c)
+        return false;
+
+    return append_cell(*c, m_data->type);
 }
 
 inline std::optional<SlicerVariant> SlicerVariant::parse_vector(ValueType elem, const std::string& s, const std::string& split)
@@ -2474,7 +2449,6 @@ inline bool SlicerVariant::deserialize(const std::string& s, ValueType t)
     return true;
 }
 
-// ---------- serialize ----------
 inline std::string SlicerVariant::serialize_cell(const Cell& c, bool as_vector_elem, ValueType elem)
 {
     if (std::holds_alternative<NilType>(c))
@@ -2486,7 +2460,7 @@ inline std::string SlicerVariant::serialize_cell(const Cell& c, bool as_vector_e
     }
 
     if (const bool* v = std::get_if<bool>(&c))
-        return *v ? "1" : "0";  // the legacy reader only accepts digits
+        return *v ? "1" : "0";
 
     if (const int64_t* v = std::get_if<int64_t>(&c))
         return int64_to_string(*v);
@@ -2502,11 +2476,9 @@ inline std::string SlicerVariant::serialize_cell(const Cell& c, bool as_vector_e
 
     if (const std::string* s = std::get_if<std::string>(&c))
     {
-        // scalar: cstyle escape, no quotes (ports ConfigOptionString::serialize)
         if (!as_vector_elem)
             return escape_cstyle(*s);
 
-        // vector element: quoted only when ambiguous
         return string_needs_quotes(*s) ? "\"" + escape_cstyle(*s) + "\"" : *s;
     }
 
@@ -2567,9 +2539,8 @@ inline std::vector<std::string> SlicerVariant::serialize_vector() const
     return out;
 }
 
-} // namespace ConfigSchema
+}
 
-// Support for unordered containers.
 template<>
 struct std::hash<ConfigSchema::SlicerVariant>
 {

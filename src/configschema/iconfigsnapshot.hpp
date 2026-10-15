@@ -37,15 +37,4 @@ struct IConfigSnapShot
     virtual const IConfigScopeSnapShot* modelObjectConfig(size_t modelObjectId) const = 0;
 };
 
-
-static std::unordered_map<std::string, ConfigScopeType> s_configScopeTypeMap = {
-    {"none",            ConfigScopeType::None},
-    {"print_object",    ConfigScopeType::PrintObject},
-    {"print_region",    ConfigScopeType::PrintRegion},
-    {"machine",         ConfigScopeType::Machine},
-    {"print",           ConfigScopeType::Print},
-    {"gcode",           ConfigScopeType::GCode},
-};
-
-
-} // namespace ConfigSchema
+}

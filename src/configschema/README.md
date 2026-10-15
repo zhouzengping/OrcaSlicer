@@ -1,21 +1,21 @@
 # Preset Schema 使用与新增 Key 指南
 
-`src/projectcore/schema/` 下的 YAML 由 `src/projectcore/schema/script/generate_schema.py`
+`src/configschema/metadata/` 下的 YAML 由 `src/configschema/script/generate_schema.py`
 从源码生成，**不要手改**——改源码后重跑脚本即可同步（后续接入 CI 做门禁）。
 
 ```bash
-python src/projectcore/schema/script/generate_schema.py   # 输出统计 + warnings（应为 0）
-python src/projectcore/schema/script/yaml_to_json.py      # 同目录生成 .json（格式对照/消费）
+python src/configschema/script/generate_schema.py   # 输出统计 + warnings（应为 0）
+python src/configschema/script/yaml_to_json.py      # 同目录生成 .json（格式对照/消费）
 ```
 
 ## 文件布局
 
 | 文件 | 内容 | 来源 |
 |---|---|---|
-| `print.yaml` | 工艺预设（质量/强度/速度/支撑/材料/其他 tab） | `TabPrint::build` |
-| `filament.yaml` | 耗材预设（含 Setting Overrides 页） | `TabFilament::build + add_filament_overrides_page` |
-| `printer.yaml` | 打印机预设（含 Extruder %d 模板页、机器限制） | `TabPrinter::build_fff + build_kinematics_page + build_unregular_pages` |
-| `hidden.yaml` | 不出现在预设 tab 的 key（无布局，仅 metadata 节） | PrintConfigDef 减去上述 UI（已知盲区见文末） |
+| `metadata/print.yaml` | 工艺预设（质量/强度/速度/支撑/材料/其他 tab） | `TabPrint::build` |
+| `metadata/filament.yaml` | 耗材预设（含 Setting Overrides 页） | `TabFilament::build + add_filament_overrides_page` |
+| `metadata/printer.yaml` | 打印机预设（含 Extruder %d 模板页、机器限制） | `TabPrinter::build_fff + build_kinematics_page + build_unregular_pages` |
+| `metadata/hidden.yaml` | 不出现在预设 tab 的 key（无布局，仅 metadata 节） | PrintConfigDef 减去上述 UI（已知盲区见文末） |
 | `i18n/{print,filament,printer,hidden}.yaml` | 展示层：label/full_label/tooltip/sidetext/category/enum_labels 的原文 + 各语言翻译 | `PrintConfig.cpp` 的 L() 文本 + `localization/i18n/zh_CN/*.po` |
 
 结构：**布局与元数据分离**。`layouts.tabs[] → groups[] → keys[]` 只承载页面
@@ -232,7 +232,7 @@ metadata 条目内字段分两层：存储语义字段（`scope`/`values`/`min`/
 
 ### i18n：展示层与翻译（display layer）
 
-`src/projectcore/schema/i18n/{print,filament,printer,hidden}.yaml` 收录每个 key 的**展示层**——
+`src/configschema/i18n/{print,filament,printer,hidden}.yaml` 收录每个 key 的**展示层**——
 源码 `def->label / full_label / tooltip / sidetext / category / enum_labels` 的原文
 与可用翻译。结构与语义（type/widget/default/min/max…）留在主 YAML，
 一切「显示什么、翻译成什么」都在这里，以 key 为单位组织：
@@ -338,7 +338,7 @@ optgroup->append_single_option_line("my_new_setting");
 ### 4. 同步 Schema + 翻译
 
 ```bash
-python src/projectcore/schema/script/generate_schema.py
+python src/configschema/script/generate_schema.py
 ```
 
 - 中文翻译：向 `localization/i18n/zh_CN/Snapmaker_Orca_zh_CN.po` 补
