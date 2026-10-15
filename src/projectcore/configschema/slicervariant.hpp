@@ -76,7 +76,7 @@ public:
     using Point                = Slic3r::Vec2d;
     using Point3               = Slic3r::Vec3d;
     using StringVector         = std::vector<std::string>;
-    using BoolVector           = std::vector<bool>;
+    using BoolVector           = std::vector<unsigned char>;  // mirrors legacy ConfigOptionBools (ConfigOptionVector<unsigned char>), avoids std::vector<bool>
     using IntVector            = std::vector<int>;
     using Int64Vector          = std::vector<int64_t>;
     using FloatVector          = std::vector<double>;
@@ -978,7 +978,7 @@ inline SlicerVariant::SlicerVariant(const BoolVector& v)
     s.cells.reserve(v.size());
 
     for (size_t i = 0; i < v.size(); ++i)
-        s.cells.push_back(Cell(v[i]));
+        s.cells.push_back(Cell(v[i] != 0));
 }
 
 inline SlicerVariant::SlicerVariant(const IntVector& v)
@@ -1224,9 +1224,9 @@ inline EnumValue SlicerVariant::to_enum(bool* ok) const
 }
 
 // ---------- vector gets ----------
-inline std::vector<bool> SlicerVariant::bool_vector(bool* ok) const
+inline SlicerVariant::BoolVector SlicerVariant::bool_vector(bool* ok) const
 {
-    std::vector<bool> out;
+    BoolVector out;
 
     if (ok)
         *ok = false;
@@ -1244,9 +1244,9 @@ inline std::vector<bool> SlicerVariant::bool_vector(bool* ok) const
         const bool v = cell_to_bool(s.cells[i], elem_type_of(s.type), &ok_elem);
 
         if (!ok_elem)
-            return std::vector<bool>();
+            return BoolVector();
 
-        out.push_back(v);
+        out.push_back((unsigned char)v);
     }
 
     if (ok)
@@ -1705,7 +1705,7 @@ inline bool SlicerVariant::append_cells(ValueType vector_type, size_t append_Siz
 
 inline bool SlicerVariant::appendvec(const BoolVector& v)
 {
-    return append_cells(ValueType::Bools, v.size(), [&v](size_t i) { return Cell(v[i]); });
+    return append_cells(ValueType::Bools, v.size(), [&v](size_t i) { return Cell(v[i] != 0); });
 }
 
 inline bool SlicerVariant::appendvec(const IntVector& v)
