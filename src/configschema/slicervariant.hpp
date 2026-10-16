@@ -19,8 +19,6 @@
 #include <vector>
 #include <unordered_map>
 
-#include "libslic3r/Point.hpp"
-
 namespace ConfigSchema
 {
 struct Percent
@@ -45,6 +43,43 @@ struct EnumValue
     bool operator==(const EnumValue& rhs) const;
 };
 
+struct Point
+{
+    double m_x = 0.0;
+    double m_y = 0.0;
+
+    Point() = default;
+    Point(double x, double y)
+        : m_x(x), m_y(y)
+    {
+    }
+
+    double x() const { return m_x; }
+    double y() const { return m_y; }
+
+    bool operator==(const Point& rhs) const { return m_x == rhs.m_x && m_y == rhs.m_y; }
+    bool operator!=(const Point& rhs) const { return !(*this == rhs); }
+};
+
+struct Point3
+{
+    double m_x = 0.0;
+    double m_y = 0.0;
+    double m_z = 0.0;
+
+    Point3() = default;
+    Point3(double x, double y, double z)
+        : m_x(x), m_y(y), m_z(z)
+    {
+    }
+
+    double x() const { return m_x; }
+    double y() const { return m_y; }
+    double z() const { return m_z; }
+
+    bool operator==(const Point3& rhs) const { return m_x == rhs.m_x && m_y == rhs.m_y && m_z == rhs.m_z; }
+    bool operator!=(const Point3& rhs) const { return !(*this == rhs); }
+};
 
 constexpr size_t g_hashBasis = 1469598103934665603ULL;
 constexpr size_t g_hashPrime = 1099511628211ULL;
@@ -72,8 +107,7 @@ public:
         Point   = 0x0008,            Points     = 0x1008,
         Point3  = 0x0009,            Points3    = 0x1009,
     };
-    using Point                = Slic3r::Vec2d;
-    using Point3               = Slic3r::Vec3d;
+
     using StringVector         = std::vector<std::string>;
     using BoolVector           = std::vector<unsigned char>;
     using IntVector            = std::vector<int>;
@@ -85,7 +119,6 @@ public:
     using FloatOrPercentVector = std::vector<FloatOrPercent>;
     using EnumVector           = std::vector<EnumValue>;
 
-    
     static const std::unordered_map<SlicerVariant::ValueType, const char*> g_valueTypeNameMap;
 
 public:
@@ -656,7 +689,7 @@ inline FloatOrPercent SlicerVariant::cell_to_float_or_percent(const Cell& c, Val
     return FloatOrPercent();
 }
 
-inline SlicerVariant::Point SlicerVariant::cell_to_point(const Cell& c, ValueType t, bool* ok)
+inline Point SlicerVariant::cell_to_point(const Cell& c, ValueType t, bool* ok)
 {
     const Point* p = t == ValueType::Point ? std::get_if<Point>(&c) : nullptr;
 
@@ -666,7 +699,7 @@ inline SlicerVariant::Point SlicerVariant::cell_to_point(const Cell& c, ValueTyp
     return p != nullptr ? *p : Point(0.0, 0.0);
 }
 
-inline SlicerVariant::Point3 SlicerVariant::cell_to_point3(const Cell& c, ValueType t, bool* ok)
+inline Point3 SlicerVariant::cell_to_point3(const Cell& c, ValueType t, bool* ok)
 {
     const Point3* p = t == ValueType::Point3 ? std::get_if<Point3>(&c) : nullptr;
 
@@ -1190,12 +1223,12 @@ inline FloatOrPercent SlicerVariant::to_float_or_percent(bool* ok) const
     return cell_to_float_or_percent(scalar_ref(), elem_type_of(storage().type), ok);
 }
 
-inline SlicerVariant::Point SlicerVariant::to_point(bool* ok) const
+inline Point SlicerVariant::to_point(bool* ok) const
 {
     return cell_to_point(scalar_ref(), elem_type_of(storage().type), ok);
 }
 
-inline SlicerVariant::Point3 SlicerVariant::to_point3(bool* ok) const
+inline Point3 SlicerVariant::to_point3(bool* ok) const
 {
     return cell_to_point3(scalar_ref(), elem_type_of(storage().type), ok);
 }
@@ -1422,7 +1455,7 @@ inline std::vector<std::string> SlicerVariant::string_vector(bool* ok) const
     return out;
 }
 
-inline std::vector<SlicerVariant::Point> SlicerVariant::point_vector(bool* ok) const
+inline std::vector<Point> SlicerVariant::point_vector(bool* ok) const
 {
     std::vector<Point> out;
 
@@ -1453,7 +1486,7 @@ inline std::vector<SlicerVariant::Point> SlicerVariant::point_vector(bool* ok) c
     return out;
 }
 
-inline std::vector<SlicerVariant::Point3> SlicerVariant::point3_vector(bool* ok) const
+inline std::vector<Point3> SlicerVariant::point3_vector(bool* ok) const
 {
     std::vector<Point3> out;
 
@@ -1550,12 +1583,12 @@ inline std::string SlicerVariant::elem_string(size_t i) const
     return cell_to_string(elem_ref(i), elem_type_of(storage().type), nullptr);
 }
 
-inline SlicerVariant::Point SlicerVariant::elem_point(size_t i) const
+inline Point SlicerVariant::elem_point(size_t i) const
 {
     return cell_to_point(elem_ref(i), elem_type_of(storage().type), nullptr);
 }
 
-inline SlicerVariant::Point3 SlicerVariant::elem_point3(size_t i) const
+inline Point3 SlicerVariant::elem_point3(size_t i) const
 {
     return cell_to_point3(elem_ref(i), elem_type_of(storage().type), nullptr);
 }

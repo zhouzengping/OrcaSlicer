@@ -93,13 +93,13 @@ void appendJsonElem(SlicerVariant& v, SlicerVariant::ValueType elem, const json&
     }
     case VT::Point:
         if (j.is_array() && j.size() >= 2 && j[0].is_number() && j[1].is_number())
-            v.append(SlicerVariant::Point(j[0].get<double>(), j[1].get<double>()));
+            v.append(Point(j[0].get<double>(), j[1].get<double>()));
         else
             v.append_nil();
         return;
     case VT::Point3:
         if (j.is_array() && j.size() >= 3 && j[0].is_number() && j[1].is_number() && j[2].is_number())
-            v.append(SlicerVariant::Point3(j[0].get<double>(), j[1].get<double>(), j[2].get<double>()));
+            v.append(Point3(j[0].get<double>(), j[1].get<double>(), j[2].get<double>()));
         else
             v.append_nil();
         return;
