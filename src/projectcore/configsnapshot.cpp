@@ -26,17 +26,17 @@ std::list<std::string> ConfigScopeSnapShot::keys() const
     return std::list<std::string>(sorted.begin(), sorted.end());
 }
 
-void ConfigScopeSnapShot::set(const std::string& key, const SlicerVariant& v)
+void ConfigScopeSnapShot::setValue(const std::string& key, const SlicerVariant& v)
 {
     m_values[key] = v;
 }
 
-void ConfigScopeSnapShot::set(const std::string& key, SlicerVariant&& v)
+void ConfigScopeSnapShot::setValue(const std::string& key, SlicerVariant&& v)
 {
     m_values[key] = std::move(v);
 }
 
-bool ConfigScopeSnapShot::erase(const std::string& key)
+bool ConfigScopeSnapShot::remove(const std::string& key)
 {
     return m_values.erase(key) != 0;
 }
@@ -150,7 +150,7 @@ void ConfigSnapshot::ensureScopeViews() const
             {
                 auto it = m_values.find(key);
                 if (it != m_values.end())
-                    view.set(key, it->second);
+                    view.setValue(key, it->second);
             }
         }
     }
@@ -172,19 +172,19 @@ const IConfigScopeSnapShot* ConfigSnapshot::modelObjectConfig(size_t modelObject
     return it != m_modelObjects.end() ? &it->second : nullptr;
 }
 
-void ConfigSnapshot::set(const std::string& key, const SlicerVariant& v)
+void ConfigSnapshot::setValue(const std::string& key, const SlicerVariant& v)
 {
     m_values[key] = v;
     invalidateViews();
 }
 
-void ConfigSnapshot::set(const std::string& key, SlicerVariant&& v)
+void ConfigSnapshot::setValue(const std::string& key, SlicerVariant&& v)
 {
     m_values[key] = std::move(v);
     invalidateViews();
 }
 
-bool ConfigSnapshot::erase(const std::string& key)
+bool ConfigSnapshot::remove(const std::string& key)
 {
     const bool removed = m_values.erase(key) != 0;
     if (removed)
@@ -257,7 +257,7 @@ const ConfigScopeSnapShot* ConfigSnapshot::modelObjectPtr(size_t modelObjectId) 
     return it != m_modelObjects.end() ? &it->second : nullptr;
 }
 
-bool ConfigSnapshot::eraseModelObject(size_t modelObjectId)
+bool ConfigSnapshot::removeModelObject(size_t modelObjectId)
 {
     return m_modelObjects.erase(modelObjectId) != 0;
 }

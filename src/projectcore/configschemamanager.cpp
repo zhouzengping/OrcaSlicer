@@ -393,22 +393,20 @@ void ConfigSchemaI18N::mergeKey(const std::string& key, const json& node)
 
 std::string toString(PresetType type)
 {
-    switch (type)
-    {
-    case PresetType::Hidden:   return "hidden";
-    case PresetType::Print:    return "print";
-    case PresetType::Filament: return "filament";
-    case PresetType::Printer:  return "printer";
-    default:                   return std::string();
-    }
+    auto it = s_presetType2StringMap.find(type);
+    if (it != s_presetType2StringMap.end())
+        return it->second;
+    return std::string();
 }
 
 bool presetTypeFromString(const std::string& s, PresetType& out)
 {
-    if (s == "hidden")            { out = PresetType::Hidden;   return true; }
-    if (s == "print")             { out = PresetType::Print;    return true; }
-    if (s == "filament")          { out = PresetType::Filament; return true; }
-    if (s == "printer")           { out = PresetType::Printer;  return true; }
+    auto it = s_presetString2TypeMap.find(s);
+    if (it != s_presetString2TypeMap.end())
+    {
+        out = it->second;
+        return true;
+    }
     return false;
 }
 

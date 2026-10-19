@@ -19,6 +19,8 @@
 #include <vector>
 #include <unordered_map>
 
+#include "iconfigmetadef.hpp"
+
 namespace ConfigSchema
 {
 struct Percent
@@ -84,30 +86,15 @@ struct Point3
 constexpr size_t g_hashBasis = 1469598103934665603ULL;
 constexpr size_t g_hashPrime = 1099511628211ULL;
 
-constexpr uint16_t g_typeVectorFlag = 0x1000;
-
 constexpr const char* g_nilString = "nil";
-
 constexpr const char* g_splitCommas = ",";
 constexpr const char* g_splitSemicolons = ";";
 
+
+using ValueType = ConfigMetaType;
 class SlicerVariant
 {
 public:
-    enum class ValueType : uint16_t
-    {
-        Undef   = 0x0000,
-        String  = 0x0001,            Strings    = 0x1001,
-        Int     = 0x0002,            Ints       = 0x1002,
-        Float   = 0x0003,            Floats     = 0x1003,
-        Bool    = 0x0004,            Bools      = 0x1004,
-        Percent = 0x0005,            Percents   = 0x1005,
-        FloatOrPercent = 0x0006,     FloatOrPercents = 0x1006,
-        Enum    = 0x0007,            Enums      = 0x1007,
-        Point   = 0x0008,            Points     = 0x1008,
-        Point3  = 0x0009,            Points3    = 0x1009,
-    };
-
     using StringVector         = std::vector<std::string>;
     using BoolVector           = std::vector<unsigned char>;
     using IntVector            = std::vector<int>;
@@ -119,7 +106,7 @@ public:
     using FloatOrPercentVector = std::vector<FloatOrPercent>;
     using EnumVector           = std::vector<EnumValue>;
 
-    static const std::unordered_map<SlicerVariant::ValueType, const char*> g_valueTypeNameMap;
+    static const std::unordered_map<ValueType, const char*> g_valueTypeNameMap;
 
 public:
     SlicerVariant() = default;
@@ -348,27 +335,27 @@ private:
     std::shared_ptr<Storage> m_data;
 };
 
-inline const std::unordered_map<SlicerVariant::ValueType, const char*> SlicerVariant::g_valueTypeNameMap =
+inline const std::unordered_map<ValueType, const char*> SlicerVariant::g_valueTypeNameMap =
 {
-    { SlicerVariant::ValueType::Undef, "undef" },
-    { SlicerVariant::ValueType::String, "string" },
-    { SlicerVariant::ValueType::Strings, "strings" },
-    { SlicerVariant::ValueType::Int, "int" },
-    { SlicerVariant::ValueType::Ints, "ints" },
-    { SlicerVariant::ValueType::Float, "float" },
-    { SlicerVariant::ValueType::Floats, "floats" },
-    { SlicerVariant::ValueType::Bool, "bool" },
-    { SlicerVariant::ValueType::Bools, "bools" },
-    { SlicerVariant::ValueType::Percent, "percent" },
-    { SlicerVariant::ValueType::Percents, "percents" },
-    { SlicerVariant::ValueType::FloatOrPercent, "float_or_percent" },
-    { SlicerVariant::ValueType::FloatOrPercents, "float_or_percents" },
-    { SlicerVariant::ValueType::Enum, "enum" },
-    { SlicerVariant::ValueType::Enums, "enums" },
-    { SlicerVariant::ValueType::Point, "point" },
-    { SlicerVariant::ValueType::Points, "points" },
-    { SlicerVariant::ValueType::Point3, "point3" },
-    { SlicerVariant::ValueType::Points3, "points3" }
+    { ValueType::Undef, "undef" },
+    { ValueType::String, "string" },
+    { ValueType::Strings, "strings" },
+    { ValueType::Int, "int" },
+    { ValueType::Ints, "ints" },
+    { ValueType::Float, "float" },
+    { ValueType::Floats, "floats" },
+    { ValueType::Bool, "bool" },
+    { ValueType::Bools, "bools" },
+    { ValueType::Percent, "percent" },
+    { ValueType::Percents, "percents" },
+    { ValueType::FloatOrPercent, "float_or_percent" },
+    { ValueType::FloatOrPercents, "float_or_percents" },
+    { ValueType::Enum, "enum" },
+    { ValueType::Enums, "enums" },
+    { ValueType::Point, "point" },
+    { ValueType::Points, "points" },
+    { ValueType::Point3, "point3" },
+    { ValueType::Points3, "points3" }
 };
 
 
@@ -392,12 +379,12 @@ inline bool SlicerVariant::is_vector_type(ValueType t)
     return (uint16_t(t) & g_typeVectorFlag) != 0;
 }
 
-inline SlicerVariant::ValueType SlicerVariant::vector_type_of(ValueType t)
+inline ValueType SlicerVariant::vector_type_of(ValueType t)
 {
     return (ValueType)(uint16_t(t) | g_typeVectorFlag);
 }
 
-inline SlicerVariant::ValueType SlicerVariant::elem_type_of(ValueType t)
+inline ValueType SlicerVariant::elem_type_of(ValueType t)
 {
     return (ValueType)(uint16_t(t) & ~g_typeVectorFlag);
 }
@@ -1086,7 +1073,7 @@ inline SlicerVariant::SlicerVariant(const EnumVector& v)
         s.cells.push_back(Cell(v[i]));
 }
 
-inline SlicerVariant::ValueType SlicerVariant::type() const
+inline ValueType SlicerVariant::type() const
 {
     return storage().type;
 }
