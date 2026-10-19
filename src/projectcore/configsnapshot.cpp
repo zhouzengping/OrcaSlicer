@@ -142,11 +142,11 @@ void ConfigSnapshot::ensureScopeViews() const
     m_scopeViews.clear();
     if (m_schema)
     {
-        const int scopeCount = (int)ConfigScopeType::GCode + 1;
+        const int scopeCount = (int)ConfigMetaScope::GCode + 1;
         for (int s = 1; s < scopeCount; ++s)
         {
             ConfigScopeSnapShot& view = m_scopeViews[s];
-            for (const std::string& key : m_schema->scopeKeys((ConfigScopeType)s))
+            for (const std::string& key : m_schema->scopeKeys((ConfigMetaScope)s))
             {
                 auto it = m_values.find(key);
                 if (it != m_values.end())
@@ -157,12 +157,12 @@ void ConfigSnapshot::ensureScopeViews() const
     m_scopeViewsDirty = false;
 }
 
-const IConfigScopeSnapShot* ConfigSnapshot::scopeConfig(ConfigScopeType scope) const
+const IConfigScopeSnapShot* ConfigSnapshot::scopeConfig(ConfigMetaScope scope) const
 {
-    if (scope == ConfigScopeType::None)
+    if (scope == ConfigMetaScope::None)
         return nullptr;
     ensureScopeViews();
-    auto it = m_scopeViews.find((int)scope);
+    auto it = m_scopeViews.find(scope);
     return it != m_scopeViews.end() ? &it->second : nullptr;
 }
 

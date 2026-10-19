@@ -188,16 +188,16 @@ public:
     Point3Vector         point3_vector(bool* ok = nullptr) const;
     EnumVector           enum_vector(bool* ok = nullptr) const;
 
-    bool           elem_bool(size_t i) const;
-    int            elem_int(size_t i) const;
-    int64_t        elem_int64(size_t i) const;
-    double         elem_double(size_t i) const;
-    Percent        elem_percent(size_t i) const;
-    FloatOrPercent elem_float_or_percent(size_t i) const;
-    std::string    elem_string(size_t i) const;
-    Point          elem_point(size_t i) const;
-    Point3         elem_point3(size_t i) const;
-    EnumValue      elem_enum(size_t i) const;
+    bool           elem_bool(size_t i, bool* ok = nullptr) const;
+    int            elem_int(size_t i, bool* ok = nullptr) const;
+    int64_t        elem_int64(size_t i, bool* ok = nullptr) const;
+    double         elem_double(size_t i, bool* ok = nullptr) const;
+    Percent        elem_percent(size_t i, bool* ok = nullptr) const;
+    FloatOrPercent elem_float_or_percent(size_t i, bool* ok = nullptr) const;
+    std::string    elem_string(size_t i, bool* ok = nullptr) const;
+    Point          elem_point(size_t i, bool* ok = nullptr) const;
+    Point3         elem_point3(size_t i, bool* ok = nullptr) const;
+    EnumValue      elem_enum(size_t i, bool* ok = nullptr) const;
     bool           elem_is_nil(size_t i) const;
 
     bool append(bool v);
@@ -1548,54 +1548,54 @@ inline std::vector<EnumValue> SlicerVariant::enum_vector(bool* ok) const
     return out;
 }
 
-inline bool SlicerVariant::elem_bool(size_t i) const
+inline bool SlicerVariant::elem_bool(size_t i, bool* ok) const
 {
-    return cell_to_bool(elem_ref(i), elem_type_of(storage().type), nullptr);
+    return cell_to_bool(elem_ref(i), elem_type_of(storage().type), ok);
 }
 
-inline int SlicerVariant::elem_int(size_t i) const
+inline int SlicerVariant::elem_int(size_t i, bool* ok) const
 {
-    return (int)cell_to_int(elem_ref(i), elem_type_of(storage().type), nullptr);
+    return (int)cell_to_int(elem_ref(i), elem_type_of(storage().type), ok);
 }
 
-inline int64_t SlicerVariant::elem_int64(size_t i) const
+inline int64_t SlicerVariant::elem_int64(size_t i, bool* ok) const
 {
-    return cell_to_int(elem_ref(i), elem_type_of(storage().type), nullptr);
+    return cell_to_int(elem_ref(i), elem_type_of(storage().type), ok);
 }
 
-inline double SlicerVariant::elem_double(size_t i) const
+inline double SlicerVariant::elem_double(size_t i, bool* ok) const
 {
-    return cell_to_double(elem_ref(i), elem_type_of(storage().type), nullptr);
+    return cell_to_double(elem_ref(i), elem_type_of(storage().type), ok);
 }
 
-inline Percent SlicerVariant::elem_percent(size_t i) const
+inline Percent SlicerVariant::elem_percent(size_t i, bool* ok) const
 {
-    return cell_to_percent(elem_ref(i), elem_type_of(storage().type), nullptr);
+    return cell_to_percent(elem_ref(i), elem_type_of(storage().type), ok);
 }
 
-inline FloatOrPercent SlicerVariant::elem_float_or_percent(size_t i) const
+inline FloatOrPercent SlicerVariant::elem_float_or_percent(size_t i, bool* ok) const
 {
-    return cell_to_float_or_percent(elem_ref(i), elem_type_of(storage().type), nullptr);
+    return cell_to_float_or_percent(elem_ref(i), elem_type_of(storage().type), ok);
 }
 
-inline std::string SlicerVariant::elem_string(size_t i) const
+inline std::string SlicerVariant::elem_string(size_t i, bool* ok) const
 {
-    return cell_to_string(elem_ref(i), elem_type_of(storage().type), nullptr);
+    return cell_to_string(elem_ref(i), elem_type_of(storage().type), ok);
 }
 
-inline Point SlicerVariant::elem_point(size_t i) const
+inline Point SlicerVariant::elem_point(size_t i, bool* ok) const
 {
-    return cell_to_point(elem_ref(i), elem_type_of(storage().type), nullptr);
+    return cell_to_point(elem_ref(i), elem_type_of(storage().type), ok);
 }
 
-inline Point3 SlicerVariant::elem_point3(size_t i) const
+inline Point3 SlicerVariant::elem_point3(size_t i, bool* ok) const
 {
-    return cell_to_point3(elem_ref(i), elem_type_of(storage().type), nullptr);
+    return cell_to_point3(elem_ref(i), elem_type_of(storage().type), ok);
 }
 
-inline EnumValue SlicerVariant::elem_enum(size_t i) const
+inline EnumValue SlicerVariant::elem_enum(size_t i, bool* ok) const
 {
-    return cell_to_enum(elem_ref(i), elem_type_of(storage().type), nullptr);
+    return cell_to_enum(elem_ref(i), elem_type_of(storage().type), ok);
 }
 
 inline bool SlicerVariant::elem_is_nil(size_t i) const

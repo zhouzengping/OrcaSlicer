@@ -177,22 +177,20 @@ public:
         return out;
     }
 
-    std::list<std::string> scopeKeys(ConfigScopeType scope) const override
+    std::list<std::string> scopeKeys(ConfigMetaScope scope) const override
     {
-        const ConfigMetaScope metaScope = (ConfigMetaScope)(int)scope;
         std::list<std::string> out;
-        auto it = m_byScope.find(metaScope);
+        auto it = m_byScope.find(scope);
         if (it != m_byScope.end())
             for (const auto* m : it->second)
                 out.push_back(m->key());
         return out;
     }
 
-    std::list<IConfigMetaData*> scopeMetaDatas(ConfigScopeType scope) const override
+    std::list<IConfigMetaData*> scopeMetaDatas(ConfigMetaScope scope) const override
     {
-        const ConfigMetaScope metaScope = (ConfigMetaScope)(int)scope;
         std::list<IConfigMetaData*> out;
-        auto it = m_byScope.find(metaScope);
+        auto it = m_byScope.find(scope);
         if (it != m_byScope.end())
             out.assign(it->second.begin(), it->second.end());
         return out;

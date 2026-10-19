@@ -1,26 +1,14 @@
 #pragma once
 
 #include <list>
-#include <memory>
 #include <string>
-#include <unordered_set>
 
 #include "iconfigsnapshot.hpp"
 #include "iconfigmetadata.hpp"
 #include "iconfigschemadisplay.hpp"
-#include "../projectcore/projectcore_export.hpp"
 
 namespace ConfigSchema
 {
-
-enum class PresetType
-{
-    Hidden = 0,
-    Print,
-    Filament,
-    Printer,
-};
-
 
 struct IConfigSchemaManager
 {
@@ -31,8 +19,8 @@ struct IConfigSchemaManager
     virtual bool contains(const std::string& key) const = 0;
     virtual std::list<std::string> keys() const = 0;
 
-    virtual std::list<std::string> scopeKeys(ConfigScopeType scope) const = 0;
-    virtual std::list<IConfigMetaData*> scopeMetaDatas(ConfigScopeType scope) const = 0;
+    virtual std::list<std::string> scopeKeys(ConfigMetaScope scope) const = 0;
+    virtual std::list<IConfigMetaData*> scopeMetaDatas(ConfigMetaScope scope) const = 0;
 
     virtual std::list<std::string> presetKeys(PresetType type) const = 0;
 

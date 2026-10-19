@@ -29,6 +29,8 @@ public:
     void        apply(const std::unordered_map<std::string, SlicerVariant>& values);
     SlicerVariant* find(const std::string& key);
     const SlicerVariant* find(const std::string& key) const;
+
+    void        reserve(size_t n) const { m_values.reserve(n); }
     size_t      size() const { return m_values.size(); }
     bool        empty() const { return m_values.empty(); }
     void        clear() { m_values.clear(); }
@@ -50,7 +52,7 @@ public:
     SlicerVariant value(const std::string& key) const override;
     bool contains(const std::string& key) const override;
     std::list<std::string> keys() const override;
-    const IConfigScopeSnapShot* scopeConfig(ConfigScopeType scope) const override;
+    const IConfigScopeSnapShot* scopeConfig(ConfigMetaScope scope) const override;
     const IConfigScopeSnapShot* modelObjectConfig(size_t modelObjectId) const override;
 
     void        set(const std::string& key, const SlicerVariant& v);
@@ -70,6 +72,7 @@ public:
     void        setSchemaManager(std::shared_ptr<const IConfigSchemaManager> schema) { m_schema = std::move(schema); invalidateViews(); }
     const IConfigSchemaManager* schemaManager() const { return m_schema.get(); }
 
+    void        reserve(size_t n) const { m_values.reserve(n); }
     size_t      size() const { return m_values.size(); }
     bool        empty() const { return m_values.empty(); }
     void        clear();
@@ -78,7 +81,7 @@ private:
     std::unordered_map<std::string, SlicerVariant> m_values;
     std::map<size_t, ConfigScopeSnapShot> m_modelObjects;
     std::shared_ptr<const IConfigSchemaManager> m_schema;
-    mutable std::map<int, ConfigScopeSnapShot> m_scopeViews;
+    mutable std::map<ConfigMetaScope, ConfigScopeSnapShot> m_scopeViews;
     mutable bool m_scopeViewsDirty = true;
 
     void invalidateViews() const { m_scopeViewsDirty = true; }
