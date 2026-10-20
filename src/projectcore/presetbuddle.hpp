@@ -40,30 +40,30 @@ public:
     const IPresetCollection* printers() const;
 
     const std::vector<std::string>& filament_presets() const;
-    void                    set_filament_presets(const std::vector<std::string>& presets);
+    void set_filament_presets(const std::vector<std::string>& presets);
 
     const IConfigScopeSnapShot* project_config() const;
-    void                    set_project_config_value(const std::string& key, const SlicerVariant& v);
+    void set_project_config_value(const std::string& key, const SlicerVariant& v);
 
     const IConfigSchemaManager* schema() const;
 
-    bool                    has_defaults_only() const;
+    bool has_defaults_only() const;
 
-    void                    load_presets(const std::string& rootDir, bool isSystem,
+    void load_presets(const std::string& rootDir, bool isSystem,
                                          std::vector<std::string>* errors = nullptr);
 
-    void                    load_selections(const std::string& file,
+    void load_selections(const std::string& file,
                                             std::vector<std::string>* errors = nullptr);
-    void                    export_selections(const std::string& file) const;
+    void export_selections(const std::string& file) const;
 
-    bool                    save_current_preset(PresetType type, const std::string& newName, bool detach = false);
+    bool save_current_preset(PresetType type, const std::string& newName, bool detach = false);
 
-    void                    set_num_filaments(size_t n);
-    void                    set_filament_preset(size_t idx, const std::string& name);
+    void set_num_filaments(size_t n);
+    void set_filament_preset(size_t idx, const std::string& name);
 
-    bool                    update_compatible();
+    bool update_compatible();
 
-    ConfigSnapshot          full_config() const;
+    ConfigSnapshot full_config() const;
 
 private:
     struct Impl;

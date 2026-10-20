@@ -87,8 +87,8 @@ public:
     const std::string& presetDescription() const override { return description; }
     long long       updatedTime() const override { return updated_time; }
 
-    std::string     inherits() const override { return config.optString(kKeyInherits); }
-    void            setInherits(const std::string& v) { config.setString(kKeyInherits, v); }
+    std::string     inherits() const override { return config.value(kKeyInherits).to_string(); }
+    void            setInherits(const std::string& v) { config.setValue(kKeyInherits, SlicerVariant(v)); }
 
     std::string     label() const override;
 

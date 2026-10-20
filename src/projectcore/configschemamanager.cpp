@@ -31,10 +31,10 @@ int enumIndexOf(const std::vector<std::string>& names, const std::string& s)
     return -1;
 }
 
-void appendJsonElem(SlicerVariant& v, SlicerVariant::ValueType elem, const json& j,
+void appendJsonElem(SlicerVariant& v, ValueType elem, const json& j,
                     const std::vector<std::string>& enumNames)
 {
-    using VT = SlicerVariant::ValueType;
+    using VT = ValueType;
     if (j.is_null())
     {
         v.append_nil();
@@ -109,10 +109,10 @@ void appendJsonElem(SlicerVariant& v, SlicerVariant::ValueType elem, const json&
     }
 }
 
-SlicerVariant variantFromJson(SlicerVariant::ValueType t, const json& j,
+SlicerVariant variantFromJson(ValueType t, const json& j,
                               const std::vector<std::string>& enumNames)
 {
-    using VT = SlicerVariant::ValueType;
+    using VT = ValueType;
     if (j.is_null())
         return SlicerVariant();
 
@@ -153,22 +153,6 @@ SlicerVariant variantFromJson(SlicerVariant::ValueType t, const json& j,
     return out;
 }
 
-I18nField parseI18nField(const json& f)
-{
-    I18nField out;
-    if (f.is_object())
-    {
-        for (auto it = f.begin(); it != f.end(); ++it)
-            if (it.value().is_string())
-                out.langs[it.key()] = it.value().get<std::string>();
-    }
-    else if (f.is_string())
-    {
-        out.langs[""] = f.get<std::string>();
-    }
-    return out;
-}
-
 bool readTextFile(const std::filesystem::path& p, std::string& out)
 {
     std::ifstream f(p, std::ios::binary);
@@ -182,43 +166,10 @@ bool readTextFile(const std::filesystem::path& p, std::string& out)
     return true;
 }
 
-bool loadPresetSchema(ConfigSchemaManager& mgr, ConfigSchemaI18N& i18n,
-                      const std::filesystem::path& schemaDir, PresetType presetType, std::string& err)
+void buildPresetSchema(ConfigSchemaManager& mgr, ConfigSchemaI18N& i18n, const json& main,
+                       const json& i18nJson, const std::string& preset, PresetType presetType)
 {
-    const std::string preset = presetTypeFileName(presetType);
-    std::string text;
-    const std::filesystem::path mainPath = schemaDir / "metadata" / (preset + ".json");
-    if (!readTextFile(mainPath, text))
-    {
-        err = "cannot read " + mainPath.string();
-        return false;
-    }
-    json main;
-    try
-    {
-        main = json::parse(text);
-    }
-    catch (const std::exception& e)
-    {
-        err = "parse " + preset + ".json failed: " + e.what();
-        return false;
-    }
-
-    json i18nJson;
-    const std::filesystem::path i18nPath = schemaDir / "i18n" / (preset + ".json");
-    if (readTextFile(i18nPath, text))
-    {
-        try { i18nJson = json::parse(text); }
-        catch (const std::exception&) {}
-    }
-
-    if (!main.contains("metadata") || !main["metadata"].is_array())
-    {
-        err = preset + ".json has no metadata[]";
-        return false;
-    }
-
-    auto& presetKeySet = mgr.m_presetKeys[presetType];
+    auto& presetKeyList = mgr.m_presetKeys[presetType];
 
     for (const auto& mj : main["metadata"])
     {
@@ -260,7 +211,7 @@ bool loadPresetSchema(ConfigSchemaManager& mgr, ConfigSchemaI18N& i18n,
         if (!enumNames.empty())
         {
             SlicerVariant v;
-            v.deserialize(std::string(), SlicerVariant::ValueType::Strings);
+            v.deserialize(std::string(), ValueType::Strings);
             for (const auto& n : enumNames)
                 v.append(n);
             md->setProperty("values", std::move(v));
@@ -271,7 +222,7 @@ bool loadPresetSchema(ConfigSchemaManager& mgr, ConfigSchemaI18N& i18n,
         if (mj.contains("max") && mj["max"].is_number())
             md->setProperty("max", SlicerVariant(mj["max"].get<double>()));
 
-        md->setProperty("default", variantFromJson(variantTypeOf(typeEnum),
+        md->setProperty("default", variantFromJson(typeEnum,
                                                    mj.contains("default") ? mj["default"] : json(nullptr),
                                                    enumNames));
 
@@ -282,14 +233,15 @@ bool loadPresetSchema(ConfigSchemaManager& mgr, ConfigSchemaI18N& i18n,
                 || it.key() == "max" || it.key() == "values" || it.key() == "ui")
                 continue;
             md->setProperty(it.key(), variantFromJson(
-                it.value().is_array() ? SlicerVariant::ValueType::Strings : SlicerVariant::ValueType::String,
+                it.value().is_array() ? ValueType::Strings : ValueType::String,
                 it.value(), enumNames));
         }
 
-        presetKeySet.insert(keyStr);
+        presetKeyList.push_back(keyStr);
+        mgr.m_scopeKeys[scopeEnum].push_back(keyStr);
         mgr.m_byScope[scopeEnum].push_back(md.get());
-        mgr.m_byKey[keyStr] = md.get();
-        mgr.m_metaDatas.push_back(std::move(md));
+        mgr.m_metaDataKeys.push_back(keyStr);
+        mgr.m_byKey[keyStr] = std::move(md);
     }
 
     if (i18nJson.is_object())
@@ -338,7 +290,7 @@ bool loadPresetSchema(ConfigSchemaManager& mgr, ConfigSchemaI18N& i18n,
                             {
                                 auto mit = mgr.m_byKey.find(kj.get<std::string>());
                                 if (mit != mgr.m_byKey.end())
-                                    group->m_keys.push_back(mit->second);
+                                    group->m_keys.push_back(mit->second.get());
                             }
                     tab->m_groups.push_back(std::move(group));
                 }
@@ -351,11 +303,11 @@ bool loadPresetSchema(ConfigSchemaManager& mgr, ConfigSchemaI18N& i18n,
         tab->m_name = preset;
         auto group = std::make_unique<ConfigSchemaGroup>();
         group->m_name = "(metadata)";
-        for (const auto& key : presetKeySet)
+        for (const auto& key : presetKeyList)
         {
             auto mit = mgr.m_byKey.find(key);
             if (mit != mgr.m_byKey.end())
-                group->m_keys.push_back(mit->second);
+                group->m_keys.push_back(mit->second.get());
         }
         std::sort(group->m_keys.begin(), group->m_keys.end(),
                   [](const IConfigMetaData* a, const IConfigMetaData* b) { return a->key() < b->key(); });
@@ -363,35 +315,115 @@ bool loadPresetSchema(ConfigSchemaManager& mgr, ConfigSchemaI18N& i18n,
         display->m_tabs.push_back(std::move(tab));
     }
     mgr.m_display[presetType] = std::move(display);
+}
 
+bool loadPresetSchema(ConfigSchemaManager& mgr, ConfigSchemaI18N& i18n,
+                      const std::filesystem::path& schemaDir, PresetType presetType, std::string& err)
+{
+    const std::string preset = presetTypeToString(presetType);
+    std::string text;
+    const std::filesystem::path mainPath = schemaDir / "metadata" / (preset + ".json");
+    if (!readTextFile(mainPath, text))
+    {
+        err = "cannot read " + mainPath.string();
+        return false;
+    }
+    json main;
+    try
+    {
+        main = json::parse(text);
+    }
+    catch (const std::exception& e)
+    {
+        err = "parse " + preset + ".json failed: " + e.what();
+        return false;
+    }
+
+    json i18nJson;
+    const std::filesystem::path i18nPath = schemaDir / "i18n" / (preset + ".json");
+    if (readTextFile(i18nPath, text))
+    {
+        try { i18nJson = json::parse(text); }
+        catch (const std::exception&) {}
+    }
+
+    if (!main.contains("metadata") || !main["metadata"].is_array())
+    {
+        err = preset + ".json has no metadata[]";
+        return false;
+    }
+
+    try
+    {
+        buildPresetSchema(mgr, i18n, main, i18nJson, preset, presetType);
+    }
+    catch (const std::exception& e)
+    {
+        err = preset + ".json load fields failed: " + e.what();
+        return false;
+    }
     return true;
 }
 
 }
 
-void ConfigSchemaI18N::mergeKey(const std::string& key, const json& node)
+ConfigSchemaManager::ConfigSchemaManager() = default;
+
+ConfigSchemaManager::~ConfigSchemaManager() = default;
+
+IConfigMetaData* ConfigSchemaManager::getMetaData(const std::string& key) const
 {
-    auto& fields = m_keys[key];
-    for (auto it = node.begin(); it != node.end(); ++it)
-    {
-        if (it.key() == "enum_labels")
-        {
-            std::vector<I18nField> labels;
-            if (it.value().is_array())
-                for (const auto& el : it.value())
-                    labels.push_back(parseI18nField(el));
-            m_enumLabels[key] = std::move(labels);
-        }
-        else if (it.value().is_object() || it.value().is_string())
-        {
-            I18nField f = parseI18nField(it.value());
-            if (!f.langs.empty())
-                fields[it.key()] = std::move(f);
-        }
-    }
+    auto it = m_byKey.find(key);
+    return it != m_byKey.end() ? it->second.get() : nullptr;
 }
 
-std::string toString(PresetType type)
+bool ConfigSchemaManager::contains(const std::string& key) const
+{
+    return m_byKey.find(key) != m_byKey.end();
+}
+
+std::list<std::string> ConfigSchemaManager::keys() const
+{
+    return m_metaDataKeys;
+}
+
+std::list<std::string> ConfigSchemaManager::presetKeys(PresetType type) const
+{
+    std::list<std::string> out;
+    auto it = m_presetKeys.find(type);
+    if (it != m_presetKeys.end())
+        out = it->second;
+    out.sort();
+    return out;
+}
+
+std::list<std::string> ConfigSchemaManager::scopeKeys(ConfigMetaScope scope) const
+{
+    auto it = m_scopeKeys.find(scope);
+    return it != m_scopeKeys.end() ? it->second : std::list<std::string>();
+}
+
+std::list<IConfigMetaData*> ConfigSchemaManager::scopeMetaDatas(ConfigMetaScope scope) const
+{
+    std::list<IConfigMetaData*> out;
+    auto it = m_byScope.find(scope);
+    if (it != m_byScope.end())
+        out.assign(it->second.begin(), it->second.end());
+    return out;
+}
+
+IConfigSchemaI18N* ConfigSchemaManager::i18n() const
+{
+    return m_i18n.get();
+}
+
+IConfigSchemaDisplay* ConfigSchemaManager::display(PresetType presetType) const
+{
+    auto it = m_display.find(presetType);
+    return it != m_display.end() ? it->second.get() : nullptr;
+}
+
+std::string presetTypeToString(PresetType type)
 {
     auto it = s_presetType2StringMap.find(type);
     if (it != s_presetType2StringMap.end())
@@ -408,38 +440,6 @@ bool presetTypeFromString(const std::string& s, PresetType& out)
         return true;
     }
     return false;
-}
-
-std::string presetTypeFileName(PresetType type)
-{
-    return toString(type);
-}
-
-SlicerVariant::ValueType variantTypeOf(ConfigMetaType type)
-{
-    const uint16_t flag = g_typeVectorFlag;
-    switch (type)
-    {
-    case ConfigMetaType::String:            return SlicerVariant::ValueType::String;
-    case ConfigMetaType::Strings:           return (SlicerVariant::ValueType)(flag | (uint16_t)SlicerVariant::ValueType::String);
-    case ConfigMetaType::Int:               return SlicerVariant::ValueType::Int;
-    case ConfigMetaType::Ints:              return (SlicerVariant::ValueType)(flag | (uint16_t)SlicerVariant::ValueType::Int);
-    case ConfigMetaType::Float:             return SlicerVariant::ValueType::Float;
-    case ConfigMetaType::Floats:            return (SlicerVariant::ValueType)(flag | (uint16_t)SlicerVariant::ValueType::Float);
-    case ConfigMetaType::Bool:              return SlicerVariant::ValueType::Bool;
-    case ConfigMetaType::Bools:             return (SlicerVariant::ValueType)(flag | (uint16_t)SlicerVariant::ValueType::Bool);
-    case ConfigMetaType::Percent:           return SlicerVariant::ValueType::Percent;
-    case ConfigMetaType::Percents:          return (SlicerVariant::ValueType)(flag | (uint16_t)SlicerVariant::ValueType::Percent);
-    case ConfigMetaType::FloatOrPercent:    return SlicerVariant::ValueType::FloatOrPercent;
-    case ConfigMetaType::FloatOrPercents:   return (SlicerVariant::ValueType)(flag | (uint16_t)SlicerVariant::ValueType::FloatOrPercent);
-    case ConfigMetaType::Enum:              return SlicerVariant::ValueType::Enum;
-    case ConfigMetaType::Enums:             return (SlicerVariant::ValueType)(flag | (uint16_t)SlicerVariant::ValueType::Enum);
-    case ConfigMetaType::Point:             return SlicerVariant::ValueType::Point;
-    case ConfigMetaType::Points:            return (SlicerVariant::ValueType)(flag | (uint16_t)SlicerVariant::ValueType::Point);
-    case ConfigMetaType::Point3:            return SlicerVariant::ValueType::Point3;
-    case ConfigMetaType::Points3:           return (SlicerVariant::ValueType)(flag | (uint16_t)SlicerVariant::ValueType::Point3);
-    default:                                return SlicerVariant::ValueType::String;
-    }
 }
 
 std::unique_ptr<IConfigSchemaManager> loadConfigSchemaManager(const std::string& schemaDir, std::string& err)

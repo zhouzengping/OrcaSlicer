@@ -17,12 +17,8 @@
 namespace ConfigSchema
 {
 
-PROJECTCORE_API std::string         toString(PresetType type);
+PROJECTCORE_API std::string         presetTypeToString(PresetType type);
 PROJECTCORE_API bool                presetTypeFromString(const std::string& s, PresetType& out);
-
-PROJECTCORE_API std::string         presetTypeFileName(PresetType type);
-
-PROJECTCORE_API SlicerVariant::ValueType variantTypeOf(ConfigMetaType type);
 
 PROJECTCORE_API std::unique_ptr<IConfigSchemaManager> loadConfigSchemaManager(const std::string& schemaDir, std::string& err);
 
@@ -30,8 +26,6 @@ PROJECTCORE_API std::unique_ptr<IConfigSchemaManager> loadConfigSchemaManager(co
 class ConfigSchemaManager : public IConfigSchemaManager
 {
 public:
-    std::vector<std::unique_ptr<ConfigMetaData>> m_metaDatas;
-
     std::list<std::string> m_metaDataKeys;
     std::unordered_map<PresetType, std::list<std::string>> m_presetKeys;
     std::unordered_map<ConfigMetaScope, std::list<std::string>> m_scopeKeys;

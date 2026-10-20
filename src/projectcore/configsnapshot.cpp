@@ -31,14 +31,29 @@ void ConfigScopeSnapShot::setValue(const std::string& key, const SlicerVariant& 
     m_values[key] = v;
 }
 
-void ConfigScopeSnapShot::setValue(const std::string& key, SlicerVariant&& v)
-{
-    m_values[key] = std::move(v);
-}
-
 bool ConfigScopeSnapShot::remove(const std::string& key)
 {
     return m_values.erase(key) != 0;
+}
+
+void ConfigScopeSnapShot::reserve(size_t n) const
+{
+    const_cast<std::unordered_map<std::string, SlicerVariant>&>(m_values).reserve(n);
+}
+
+void ConfigScopeSnapShot::clear()
+{
+    m_values.clear();
+}
+
+size_t ConfigScopeSnapShot::size() const
+{
+    return m_values.size();
+}
+
+bool ConfigScopeSnapShot::empty() const
+{
+    return m_values.empty();
 }
 
 void ConfigScopeSnapShot::apply(const ConfigScopeSnapShot& other)
@@ -65,31 +80,13 @@ void ConfigScopeSnapShot::apply(const std::unordered_map<std::string, SlicerVari
     }
 }
 
-SlicerVariant* ConfigScopeSnapShot::find(const std::string& key)
+void ConfigScopeSnapShot::applyVariant(const std::string& key, const SlicerVariant& v)
 {
     auto it = m_values.find(key);
-    return it != m_values.end() ? &it->second : nullptr;
-}
-
-const SlicerVariant* ConfigScopeSnapShot::find(const std::string& key) const
-{
-    auto it = m_values.find(key);
-    return it != m_values.end() ? &it->second : nullptr;
-}
-
-std::string ConfigScopeSnapShot::optString(const std::string& key) const
-{
-    const SlicerVariant* v = find(key);
-    if (v == nullptr || v->is_undef())
-        return std::string();
-    if (v->is_vector())
-        return v->empty() || v->elem_is_nil(0) ? std::string() : v->elem_string(0);
-    return v->to_string();
-}
-
-void ConfigScopeSnapShot::setString(const std::string& key, const std::string& v)
-{
-    m_values[key] = SlicerVariant(v);
+    if (it == m_values.end())
+        m_values.emplace(key, v);
+    else
+        it->second.apply(v);
 }
 
 std::vector<std::string> ConfigScopeSnapShot::diff(const ConfigScopeSnapShot& other) const
@@ -97,8 +94,8 @@ std::vector<std::string> ConfigScopeSnapShot::diff(const ConfigScopeSnapShot& ot
     std::vector<std::string> out;
     for (const auto& kv : m_values)
     {
-        const SlicerVariant* v = other.find(kv.first);
-        if (v == nullptr || *v != kv.second)
+        auto it = other.m_values.find(kv.first);
+        if (it == other.m_values.end() || !(it->second == kv.second))
             out.push_back(kv.first);
     }
     for (const auto& kv : other.m_values)
@@ -108,174 +105,173 @@ std::vector<std::string> ConfigScopeSnapShot::diff(const ConfigScopeSnapShot& ot
     return out;
 }
 
-ConfigSnapshot::ConfigSnapshot(std::shared_ptr<const IConfigSchemaManager> schema)
+ConfigSnapshot::ConfigSnapshot()
+{
+}
+
+ConfigSnapshot::ConfigSnapshot(std::weak_ptr<const IConfigSchemaManager> schema)
     : m_schema(std::move(schema))
 {
 }
 
 SlicerVariant ConfigSnapshot::value(const std::string& key) const
 {
-    auto it = m_values.find(key);
-    return it != m_values.end() ? it->second : SlicerVariant();
+    auto it = m_fullConfig.find(key);
+    return it != m_fullConfig.end() ? it->second : SlicerVariant();
 }
 
 bool ConfigSnapshot::contains(const std::string& key) const
 {
-    return m_values.find(key) != m_values.end();
+    return m_fullConfig.find(key) != m_fullConfig.end();
 }
 
 std::list<std::string> ConfigSnapshot::keys() const
 {
-    std::vector<std::string> sorted;
-    sorted.reserve(m_values.size());
-    for (const auto& kv : m_values)
-        sorted.push_back(kv.first);
+    std::vector<std::string> sorted(m_fullkeys.begin(), m_fullkeys.end());
     std::sort(sorted.begin(), sorted.end());
+    sorted.erase(std::unique(sorted.begin(), sorted.end()), sorted.end());
     return std::list<std::string>(sorted.begin(), sorted.end());
-}
-
-void ConfigSnapshot::ensureScopeViews() const
-{
-    if (!m_scopeViewsDirty)
-        return;
-
-    m_scopeViews.clear();
-    if (m_schema)
-    {
-        const int scopeCount = (int)ConfigMetaScope::GCode + 1;
-        for (int s = 1; s < scopeCount; ++s)
-        {
-            ConfigScopeSnapShot& view = m_scopeViews[s];
-            for (const std::string& key : m_schema->scopeKeys((ConfigMetaScope)s))
-            {
-                auto it = m_values.find(key);
-                if (it != m_values.end())
-                    view.setValue(key, it->second);
-            }
-        }
-    }
-    m_scopeViewsDirty = false;
 }
 
 const IConfigScopeSnapShot* ConfigSnapshot::scopeConfig(ConfigMetaScope scope) const
 {
-    if (scope == ConfigMetaScope::None)
-        return nullptr;
-    ensureScopeViews();
-    auto it = m_scopeViews.find(scope);
-    return it != m_scopeViews.end() ? &it->second : nullptr;
+    auto it = m_scopesConfig.find(scope);
+    return it != m_scopesConfig.end() ? &it->second : nullptr;
 }
 
 const IConfigScopeSnapShot* ConfigSnapshot::modelObjectConfig(size_t modelObjectId) const
 {
-    auto it = m_modelObjects.find(modelObjectId);
-    return it != m_modelObjects.end() ? &it->second : nullptr;
+    auto it = m_modelObjectsConfig.find(modelObjectId);
+    return it != m_modelObjectsConfig.end() ? &it->second : nullptr;
 }
 
-void ConfigSnapshot::setValue(const std::string& key, const SlicerVariant& v)
+void ConfigSnapshot::setValue(const std::string& key, const SlicerVariant& v, ConfigMetaScope scope)
 {
-    m_values[key] = v;
-    invalidateViews();
-}
+    const auto [it, inserted] = m_fullConfig.insert_or_assign(key, v);
+    if (inserted)
+        m_fullkeys.push_back(key);
 
-void ConfigSnapshot::setValue(const std::string& key, SlicerVariant&& v)
-{
-    m_values[key] = std::move(v);
-    invalidateViews();
+    ConfigMetaScope target = scope;
+    if (target == ConfigMetaScope::None)
+        if (const IConfigSchemaManager* schema = schemaManager())
+            if (const IConfigMetaData* meta = schema->getMetaData(key))
+                target = meta->scope();
+    if (target != ConfigMetaScope::None)
+        m_scopesConfig[target].setValue(key, it->second);
 }
 
 bool ConfigSnapshot::remove(const std::string& key)
 {
-    const bool removed = m_values.erase(key) != 0;
-    if (removed)
-        invalidateViews();
-    return removed;
+    if (m_fullConfig.erase(key) == 0)
+        return false;
+    m_fullkeys.remove(key);
+    for (auto& kv : m_scopesConfig)
+        kv.second.remove(key);
+    return true;
+}
+
+void ConfigSnapshot::reserve(size_t n)
+{
+    m_fullConfig.reserve(n);
+}
+
+void ConfigSnapshot::clear()
+{
+    m_fullkeys.clear();
+    m_fullConfig.clear();
+    m_scopesConfig.clear();
+    m_modelObjectsConfig.clear();
+}
+
+size_t ConfigSnapshot::size() const
+{
+    return m_fullConfig.size();
+}
+
+bool ConfigSnapshot::empty() const
+{
+    return m_fullConfig.empty();
 }
 
 void ConfigSnapshot::apply(const ConfigSnapshot& other)
 {
-    for (const auto& kv : other.m_values)
-    {
-        auto it = m_values.find(kv.first);
-        if (it == m_values.end())
-            m_values.emplace(kv.first, kv.second);
-        else
-            it->second.apply(kv.second);
-    }
-    invalidateViews();
+    for (const auto& kv : other.m_fullConfig)
+        applyVariant(kv.first, kv.second);
 }
 
 void ConfigSnapshot::apply(const ConfigScopeSnapShot& scope)
 {
-    for (const auto& kv : scope.keys())
-    {
-        const SlicerVariant* v = scope.find(kv);
-        if (v == nullptr)
-            continue;
-        auto it = m_values.find(kv);
-        if (it == m_values.end())
-            m_values.emplace(kv, *v);
-        else
-            it->second.apply(*v);
-    }
-    invalidateViews();
+    for (const std::string& key : scope.keys())
+        applyVariant(key, scope.value(key));
 }
 
 void ConfigSnapshot::applyVariant(const std::string& key, const SlicerVariant& v)
 {
-    auto it = m_values.find(key);
-    if (it == m_values.end())
-        m_values.emplace(key, v);
+    auto it = m_fullConfig.find(key);
+    if (it == m_fullConfig.end())
+    {
+        m_fullkeys.push_back(key);
+        it = m_fullConfig.emplace(key, v).first;
+    }
     else
         it->second.apply(v);
-    invalidateViews();
+
+    if (const IConfigSchemaManager* schema = schemaManager())
+        if (const IConfigMetaData* meta = schema->getMetaData(key))
+        {
+            const ConfigMetaScope scope = meta->scope();
+            if (scope != ConfigMetaScope::None)
+                m_scopesConfig[scope].setValue(key, it->second);
+        }
 }
 
-SlicerVariant* ConfigSnapshot::find(const std::string& key)
+ConfigScopeSnapShot& ConfigSnapshot::scopeConfig(ConfigMetaScope scope)
 {
-    auto it = m_values.find(key);
-    if (it == m_values.end())
-        return nullptr;
-    invalidateViews();
-    return &it->second;
+    return m_scopesConfig[scope];
 }
 
-const SlicerVariant* ConfigSnapshot::find(const std::string& key) const
+void ConfigSnapshot::setModelObjectConfig(size_t modelObjectId, const ConfigScopeSnapShot& scope)
 {
-    auto it = m_values.find(key);
-    return it != m_values.end() ? &it->second : nullptr;
+    m_modelObjectsConfig[modelObjectId] = scope;
+}
+
+void ConfigSnapshot::setModelObjectConfig(size_t modelObjectId, const std::string& key, const SlicerVariant& v)
+{
+    m_modelObjectsConfig[modelObjectId].setValue(key, v);
 }
 
 ConfigScopeSnapShot& ConfigSnapshot::modelObject(size_t modelObjectId)
 {
-    return m_modelObjects[modelObjectId];
-}
-
-const ConfigScopeSnapShot* ConfigSnapshot::modelObjectPtr(size_t modelObjectId) const
-{
-    auto it = m_modelObjects.find(modelObjectId);
-    return it != m_modelObjects.end() ? &it->second : nullptr;
+    return m_modelObjectsConfig[modelObjectId];
 }
 
 bool ConfigSnapshot::removeModelObject(size_t modelObjectId)
 {
-    return m_modelObjects.erase(modelObjectId) != 0;
+    return m_modelObjectsConfig.erase(modelObjectId) != 0;
+}
+
+void ConfigSnapshot::clearModelObjectsConfig()
+{
+    m_modelObjectsConfig.clear();
 }
 
 std::vector<size_t> ConfigSnapshot::modelObjectIds() const
 {
     std::vector<size_t> out;
-    out.reserve(m_modelObjects.size());
-    for (const auto& kv : m_modelObjects)
+    out.reserve(m_modelObjectsConfig.size());
+    for (const auto& kv : m_modelObjectsConfig)
         out.push_back(kv.first);
     return out;
 }
 
-void ConfigSnapshot::clear()
+void ConfigSnapshot::setSchemaManager(std::weak_ptr<const IConfigSchemaManager> schema)
 {
-    m_values.clear();
-    m_modelObjects.clear();
-    invalidateViews();
+    m_schema = std::move(schema);
+}
+
+const IConfigSchemaManager* ConfigSnapshot::schemaManager() const
+{
+    return m_schema.lock().get();
 }
 
 }

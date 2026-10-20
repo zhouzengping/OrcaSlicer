@@ -23,7 +23,6 @@ public:
     std::list<std::string> keys() const override;
 
     void setValue(const std::string& key, const SlicerVariant& v);
-    void setValue(const std::string& key, SlicerVariant&& v);
     bool remove(const std::string& key);
     void reserve(size_t n) const;
     void clear();
@@ -44,7 +43,7 @@ private:
 class PROJECTCORE_API ConfigSnapshot : public IConfigSnapShot
 {
 public:
-    ConfigSnapshot() = default;
+    ConfigSnapshot();
     explicit ConfigSnapshot(std::weak_ptr<const IConfigSchemaManager> schema);
 
     SlicerVariant value(const std::string& key) const override;
@@ -54,8 +53,7 @@ public:
     const IConfigScopeSnapShot* scopeConfig(ConfigMetaScope scope) const override;
     const IConfigScopeSnapShot* modelObjectConfig(size_t modelObjectId) const override;
 
-    void setValue(const std::string& key, const SlicerVariant& v);
-    void setValue(const std::string& key, SlicerVariant&& v);
+    void setValue(const std::string& key, const SlicerVariant& v, ConfigMetaScope scope = ConfigMetaScope::None);
     bool remove(const std::string& key);
     void reserve(size_t n);
     void clear();
@@ -67,12 +65,10 @@ public:
     void apply(const ConfigScopeSnapShot& scope);
     void applyVariant(const std::string& key, const SlicerVariant& v);
 
-    void setScopeConfig(ConfigMetaScope scope, const ConfigScopeSnapShot& scopeSnap);
     ConfigScopeSnapShot& scopeConfig(ConfigMetaScope scope);
-    bool removeScopeConfig(ConfigMetaScope scope);
-    void clearScopesConfig();
 
     void setModelObjectConfig(size_t modelObjectId, const ConfigScopeSnapShot& scope);
+    void setModelObjectConfig(size_t modelObjectId, const std::string& key, const SlicerVariant& v);
     ConfigScopeSnapShot& modelObject(size_t modelObjectId);
     bool removeModelObject(size_t modelObjectId);
     void clearModelObjectsConfig();
@@ -84,14 +80,11 @@ public:
 
 
 private:
-    void invalidateViews() const { m_scopeViewsDirty = true; }
-    void ensureScopeViews() const;
-
-private:
     std::weak_ptr<const IConfigSchemaManager> m_schema;
     std::list<std::string> m_fullkeys;
     std::unordered_map<std::string, SlicerVariant> m_fullConfig;
     std::unordered_map<ConfigMetaScope, ConfigScopeSnapShot> m_scopesConfig;
+    // Independent configuration of model objects, with the key being the ID of the model object.
     std::unordered_map<size_t, ConfigScopeSnapShot> m_modelObjectsConfig;
 };
 

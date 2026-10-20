@@ -144,9 +144,9 @@ bool Preset::load(const std::string& filePath, const IConfigSchemaManager* schem
             continue;
         }
 
-        const SlicerVariant::ValueType vt = variantTypeOf(meta->type());
-        const SlicerVariant::ValueType elem = (SlicerVariant::ValueType)((uint16_t)vt & ~g_typeVectorFlag);
-        const bool isEnum = elem == SlicerVariant::ValueType::Enum;
+        const ValueType vt = meta->type();
+        const ValueType elem = (ValueType)((uint16_t)vt & ~g_typeVectorFlag);
+        const bool isEnum = elem == ValueType::Enum;
 
         auto enumIndexByName = [meta](const std::string& text) -> int
         {
@@ -200,7 +200,7 @@ bool Preset::load(const std::string& filePath, const IConfigSchemaManager* schem
             }
             if (!ok)
                 continue;
-            config.set(key, std::move(v));
+            config.setValue(key, std::move(v));
         }
         else
         {
@@ -218,7 +218,7 @@ bool Preset::load(const std::string& filePath, const IConfigSchemaManager* schem
                     parsed = SlicerVariant(EnumValue{ idx });
             }
             if (parsed)
-                config.set(key, std::move(*parsed));
+                config.setValue(key, std::move(*parsed));
         }
     }
 
@@ -266,8 +266,8 @@ bool Preset::save(const Preset* parent, const IConfigSchemaManager* schema) cons
             {
                 if (const IConfigMetaData* meta = schema->getMetaData(key))
                 {
-                    const SlicerVariant* v = config.find(key);
-                    differsFromDefault = v == nullptr || !(meta->defaultValue() == *v);
+                    const SlicerVariant v = config.value(key);
+                    differsFromDefault = v.is_undef() || !(meta->defaultValue() == v);
                 }
             }
             if (differsFromDefault)
@@ -304,13 +304,13 @@ bool Preset::save(const Preset* parent, const IConfigSchemaManager* schema) cons
             continue;
         const IConfigMetaData* meta = schema != nullptr ? schema->getMetaData(key) : nullptr;
         const bool isEnum = meta != nullptr &&
-            ((uint16_t)variantTypeOf(meta->type()) & ~g_typeVectorFlag) == (uint16_t)SlicerVariant::ValueType::Enum;
-        const SlicerVariant* v = config.find(key);
-        if (v == nullptr || v->is_undef())
+            ((uint16_t)meta->type() & ~g_typeVectorFlag) == (uint16_t)ValueType::Enum;
+        const SlicerVariant v = config.value(key);
+        if (v.is_undef())
             continue;
-        if (v->is_vector())
+        if (v.is_vector())
         {
-            std::vector<std::string> elems = v->serialize_vector();
+            std::vector<std::string> elems = v.serialize_vector();
             if (isEnum)
                 for (std::string& e : elems)
                     e = enumIndexTextToName(meta, e);
@@ -318,7 +318,7 @@ bool Preset::save(const Preset* parent, const IConfigSchemaManager* schema) cons
         }
         else
         {
-            std::string text = v->serialize();
+            std::string text = v.serialize();
             if (isEnum)
                 text = enumIndexTextToName(meta, text);
             j[key] = text;
@@ -432,7 +432,7 @@ std::string Preset::dirName(PresetType type)
 
 std::string Preset::iotTypeName(PresetType type)
 {
-    return toString(type);
+    return presetTypeToString(type);
 }
 
 bool Preset::typeFromDirName(const std::string& name, PresetType& out)

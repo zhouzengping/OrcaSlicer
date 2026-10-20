@@ -19,7 +19,7 @@ PresetCollection::PresetCollection(PresetType type, const IConfigSchemaManager* 
         for (const std::string& key : m_schema->presetKeys(type))
             if (const IConfigMetaData* meta = m_schema->getMetaData(key))
                 if (!meta->defaultValue().is_undef())
-                    dp.config.set(key, meta->defaultValue());
+                    dp.config.setValue(key, meta->defaultValue());
     dp.loaded = true;
     ++m_numDefaultPresets;
     m_editedPreset = dp;
@@ -254,10 +254,10 @@ bool PresetCollection::selectPresetByName(const std::string& nameWithSuffix, boo
         bool found = false;
         if (m_type == PresetType::Printer && it != m_presets.end() && it->name == name && !it->is_visible)
         {
-            const std::string printerModel = it->config.optString("printer_model");
+            const std::string printerModel = it->config.value("printer_model").to_string();
             if (!printerModel.empty())
                 for (size_t i = m_numDefaultPresets; i < m_presets.size(); ++i)
-                    if (m_presets[i].is_visible && m_presets[i].config.optString("printer_model") == printerModel)
+                    if (m_presets[i].is_visible && m_presets[i].config.value("printer_model").to_string() == printerModel)
                     {
                         idx = i;
                         found = true;
@@ -327,26 +327,22 @@ static void updateSettingsId(Preset& preset, const std::string& newName)
     switch (preset.type)
     {
     case PresetType::Print:
-        preset.config.setString("print_settings_id", newName);
+        preset.config.setValue("print_settings_id", SlicerVariant(newName));
         break;
     case PresetType::Filament:
     {
-        SlicerVariant* v = preset.config.find("filament_settings_id");
-        if (v == nullptr)
-        {
-            preset.config.set("filament_settings_id", SlicerVariant());
-            v = preset.config.find("filament_settings_id");
-        }
-        if (v->is_undef() || !v->is_vector())
-            v->deserialize(std::string(), SlicerVariant::ValueType::Strings);
-        if (v->empty())
-            v->append(newName);
+        SlicerVariant v = preset.config.value("filament_settings_id");
+        if (v.is_undef() || !v.is_vector())
+            v.deserialize(std::string(), ValueType::Strings);
+        if (v.empty())
+            v.append(newName);
         else
-            v->set_elem(0, newName);
+            v.set_elem(0, newName);
+        preset.config.setValue("filament_settings_id", std::move(v));
         break;
     }
     case PresetType::Printer:
-        preset.config.setString("printer_settings_id", newName);
+        preset.config.setValue("printer_settings_id", SlicerVariant(newName));
         break;
     default:
         break;
@@ -408,9 +404,12 @@ bool PresetCollection::saveCurrentPreset(const std::string& newName, bool detach
             preset.setInherits(oldName);
         if (currentPrinter != nullptr && currPreset.is_system && m_type == PresetType::Filament)
         {
-            SlicerVariant* compatiblePrinters = preset.config.find("compatible_printers");
-            if (compatiblePrinters != nullptr && compatiblePrinters->is_vector() && compatiblePrinters->empty())
-                compatiblePrinters->set_elem(0, currentPrinter->presetName());
+            SlicerVariant compatiblePrinters = preset.config.value("compatible_printers");
+            if (compatiblePrinters.is_vector() && compatiblePrinters.empty())
+            {
+                compatiblePrinters.set_elem(0, currentPrinter->presetName());
+                preset.config.setValue("compatible_printers", std::move(compatiblePrinters));
+            }
         }
         updateSettingsId(preset, newName);
         preset.file = pathForPreset(preset);
@@ -492,14 +491,14 @@ std::string PresetCollection::pathForPreset(const Preset& preset) const
 static bool nameListCompatible(const ConfigScopeSnapShot& config, const char* key,
                                const std::vector<std::string>& activeNames)
 {
-    const SlicerVariant* v = config.find(key);
-    if (v == nullptr || v->is_undef() || !v->is_vector() || v->empty())
+    const SlicerVariant v = config.value(key);
+    if (v.is_undef() || !v.is_vector() || v.empty())
         return true;
-    for (size_t i = 0; i < v->size(); ++i)
+    for (size_t i = 0; i < v.size(); ++i)
     {
-        if (v->elem_is_nil(i))
+        if (v.elem_is_nil(i))
             continue;
-        if (std::find(activeNames.begin(), activeNames.end(), v->elem_string(i)) != activeNames.end())
+        if (std::find(activeNames.begin(), activeNames.end(), v.elem_string(i)) != activeNames.end())
             return true;
     }
     return false;
@@ -525,7 +524,7 @@ bool PresetCollection::updateCompatible(const std::vector<std::string>& activePr
 
 void PresetCollection::setEditedValue(const std::string& key, const SlicerVariant& v)
 {
-    m_editedPreset.config.set(key, v);
+    m_editedPreset.config.setValue(key, v);
 }
 
 }
