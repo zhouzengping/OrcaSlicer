@@ -3,9 +3,14 @@
 namespace ConfigSchema
 {
 
-void ConfigMetaData::setProperty(const std::string& propertyKey, SlicerVariant value)
+void ConfigMetaData::setProperty(const std::string& propertyKey, const SlicerVariant& value)
 {
-    m_properties[propertyKey] = std::move(value);
+    m_properties[propertyKey] = value;
+}
+
+void ConfigMetaData::setUiProperty(const std::string& propertyKey, const SlicerVariant& value)
+{
+    m_uiProperties[propertyKey] = value;
 }
 
 std::string ConfigMetaData::key() const
@@ -32,30 +37,6 @@ ConfigMetaScope ConfigMetaData::scope() const
     return m != s_configMetaScopeMap.end() ? m->second : ConfigMetaScope::None;
 }
 
-ConfigMetaMode ConfigMetaData::mode() const
-{
-    auto it = m_properties.find("mode");
-    if (it == m_properties.end())
-        return ConfigMetaMode::Simple;
-    auto m = s_configMetaModeMap.find(it->second.to_string());
-    return m != s_configMetaModeMap.end() ? m->second : ConfigMetaMode::Simple;
-}
-
-ConfigMetaWidgetType ConfigMetaData::widget() const
-{
-    auto it = m_properties.find("widget");
-    if (it == m_properties.end())
-        return ConfigMetaWidgetType::EditLine;
-    auto m = s_configMetaWidgetTypeMap.find(it->second.to_string());
-    return m != s_configMetaWidgetTypeMap.end() ? m->second : ConfigMetaWidgetType::EditLine;
-}
-
-bool ConfigMetaData::editEnabled() const
-{
-    auto it = m_properties.find("edit_enable");
-    return it == m_properties.end() ? true : it->second.to_bool();
-}
-
 SlicerVariant ConfigMetaData::defaultValue() const
 {
     return property("default");
@@ -76,17 +57,46 @@ SlicerVariant ConfigMetaData::max() const
     return property("max");
 }
 
-std::string ConfigMetaData::hyperlinkUrl() const
-{
-    auto it = m_properties.find("hyperlink");
-    bool ok = false;
-    return it != m_properties.end() ? it->second.to_string(&ok) : std::string();
-}
-
 SlicerVariant ConfigMetaData::property(const std::string& propertyKey) const
 {
     auto it = m_properties.find(propertyKey);
     return it != m_properties.end() ? it->second : SlicerVariant();
+}
+
+bool ConfigMetaData::editEnabled() const
+{
+    auto it = m_uiProperties.find("edit_enable");
+    return it == m_uiProperties.end() ? true : it->second.to_bool();
+}
+
+ConfigMetaMode ConfigMetaData::mode() const
+{
+    auto it = m_uiProperties.find("mode");
+    if (it == m_uiProperties.end())
+        return ConfigMetaMode::Simple;
+    auto m = s_configMetaModeMap.find(it->second.to_string());
+    return m != s_configMetaModeMap.end() ? m->second : ConfigMetaMode::Simple;
+}
+
+ConfigMetaWidgetType ConfigMetaData::widget() const
+{
+    auto it = m_uiProperties.find("widget");
+    if (it == m_uiProperties.end())
+        return ConfigMetaWidgetType::EditLine;
+    auto m = s_configMetaWidgetTypeMap.find(it->second.to_string());
+    return m != s_configMetaWidgetTypeMap.end() ? m->second : ConfigMetaWidgetType::EditLine;
+}
+
+std::string ConfigMetaData::hyperlinkUrl() const
+{
+    auto it = m_uiProperties.find("hyperlink_url");
+    return it != m_uiProperties.end() ? it->second.to_string() : std::string();
+}
+
+SlicerVariant ConfigMetaData::uiProperty(const std::string& propertyKey) const
+{
+    auto it = m_uiProperties.find(propertyKey);
+    return it != m_uiProperties.end() ? it->second : SlicerVariant();
 }
 
 }

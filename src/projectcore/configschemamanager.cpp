@@ -153,6 +153,27 @@ SlicerVariant variantFromJson(ValueType t, const json& j,
     return out;
 }
 
+SlicerVariant jsonToVariant(const json& j, const std::vector<std::string>& enumNames)
+{
+    if (j.is_boolean())
+        return SlicerVariant(j.get<bool>());
+    if (j.is_number_integer())
+        return SlicerVariant(j.get<int64_t>());
+    if (j.is_number_float())
+        return SlicerVariant(j.get<double>());
+    if (j.is_string())
+        return SlicerVariant(j.get<std::string>());
+    if (j.is_array())
+    {
+        SlicerVariant v;
+        v.deserialize(std::string(), ValueType::Strings);
+        for (const auto& e : j)
+            appendJsonElem(v, ValueType::String, e, enumNames);
+        return v;
+    }
+    return variantFromJson(ValueType::String, j, enumNames);
+}
+
 bool readTextFile(const std::filesystem::path& p, std::string& out)
 {
     std::ifstream f(p, std::ios::binary);
@@ -166,8 +187,7 @@ bool readTextFile(const std::filesystem::path& p, std::string& out)
     return true;
 }
 
-void buildPresetSchema(ConfigSchemaManager& mgr, ConfigSchemaI18N& i18n, const json& main,
-                       const json& i18nJson, const std::string& preset, PresetType presetType)
+void buildMetaDataSchema(ConfigSchemaManager& mgr, const json& main, PresetType presetType)
 {
     auto& presetKeyList = mgr.m_presetKeys[presetType];
 
@@ -193,48 +213,26 @@ void buildPresetSchema(ConfigSchemaManager& mgr, ConfigSchemaI18N& i18n, const j
             scopeEnum = it != s_configMetaScopeMap.end() ? it->second : ConfigMetaScope::None;
         }
 
-        const json noObj = json::object();
-        const json ui = (mj.contains("ui") && mj["ui"].is_object()) ? mj["ui"] : noObj;
-
-        md->setProperty("key", SlicerVariant(keyStr));
-        md->setProperty("type", SlicerVariant(typeStr));
-        md->setProperty("scope", SlicerVariant(scopeStr));
-        md->setProperty("widget", SlicerVariant(ui.value("widget", std::string("editline"))));
-        md->setProperty("mode", SlicerVariant(ui.value("mode", std::string("simple"))));
-        md->setProperty("edit_enable", SlicerVariant(ui.value("edit_enable", true)));
-        md->setProperty("nullable", SlicerVariant(mj.value("nullable", false)));
-
         std::vector<std::string> enumNames;
         if (mj.contains("values") && mj["values"].is_array())
             for (const auto& val : mj["values"])
                 enumNames.push_back(val.is_string() ? val.get<std::string>() : val.dump());
-        if (!enumNames.empty())
-        {
-            SlicerVariant v;
-            v.deserialize(std::string(), ValueType::Strings);
-            for (const auto& n : enumNames)
-                v.append(n);
-            md->setProperty("values", std::move(v));
-        }
-
-        if (mj.contains("min") && mj["min"].is_number())
-            md->setProperty("min", SlicerVariant(mj["min"].get<double>()));
-        if (mj.contains("max") && mj["max"].is_number())
-            md->setProperty("max", SlicerVariant(mj["max"].get<double>()));
-
-        md->setProperty("default", variantFromJson(typeEnum,
-                                                   mj.contains("default") ? mj["default"] : json(nullptr),
-                                                   enumNames));
 
         for (auto it = mj.begin(); it != mj.end(); ++it)
         {
-            if (it.key() == "key" || it.key() == "type" || it.key() == "scope"
-                || it.key() == "nullable" || it.key() == "default" || it.key() == "min"
-                || it.key() == "max" || it.key() == "values" || it.key() == "ui")
+            if (it.key() == "ui")
+            {
+                if (it.value().is_object())
+                    for (auto uit = it.value().begin(); uit != it.value().end(); ++uit)
+                        md->setUiProperty(uit.key(), jsonToVariant(uit.value(), enumNames));
                 continue;
-            md->setProperty(it.key(), variantFromJson(
-                it.value().is_array() ? ValueType::Strings : ValueType::String,
-                it.value(), enumNames));
+            }
+            if (it.key() == "default")
+            {
+                md->setProperty("default", variantFromJson(typeEnum, it.value(), enumNames));
+                continue;
+            }
+            md->setProperty(it.key(), jsonToVariant(it.value(), enumNames));
         }
 
         presetKeyList.push_back(keyStr);
@@ -243,23 +241,11 @@ void buildPresetSchema(ConfigSchemaManager& mgr, ConfigSchemaI18N& i18n, const j
         mgr.m_metaDataKeys.push_back(keyStr);
         mgr.m_byKey[keyStr] = std::move(md);
     }
+}
 
-    if (i18nJson.is_object())
-    {
-        if (i18nJson.contains("keys") && i18nJson["keys"].is_object())
-            for (auto it = i18nJson["keys"].begin(); it != i18nJson["keys"].end(); ++it)
-                if (it.value().is_object())
-                    i18n.mergeKey(it.key(), it.value());
-        if (i18nJson.contains("tabs") && i18nJson["tabs"].is_object())
-            for (auto it = i18nJson["tabs"].begin(); it != i18nJson["tabs"].end(); ++it)
-                if (it.value().is_object() && it.value().contains("label"))
-                    i18n.m_tabs[it.key()] = parseI18nField(it.value()["label"]);
-        if (i18nJson.contains("groups") && i18nJson["groups"].is_object())
-            for (auto it = i18nJson["groups"].begin(); it != i18nJson["groups"].end(); ++it)
-                if (it.value().is_object() && it.value().contains("label"))
-                    i18n.m_groups[it.key()] = parseI18nField(it.value()["label"]);
-    }
-
+void buildLayoutSchema(ConfigSchemaManager& mgr, ConfigSchemaI18N& i18n, const json& main,
+                       const std::string& preset, PresetType presetType)
+{
     auto display = std::make_unique<ConfigSchemaDisplay>();
     const bool hasLayout = main.contains("layouts") && main["layouts"].is_object()
         && main["layouts"].contains("tabs") && main["layouts"]["tabs"].is_array();
@@ -299,6 +285,7 @@ void buildPresetSchema(ConfigSchemaManager& mgr, ConfigSchemaI18N& i18n, const j
     }
     else
     {
+        auto& presetKeyList = mgr.m_presetKeys[presetType];
         auto tab = std::make_unique<ConfigSchemaTab>();
         tab->m_name = preset;
         auto group = std::make_unique<ConfigSchemaGroup>();
@@ -315,6 +302,30 @@ void buildPresetSchema(ConfigSchemaManager& mgr, ConfigSchemaI18N& i18n, const j
         display->m_tabs.push_back(std::move(tab));
     }
     mgr.m_display[presetType] = std::move(display);
+}
+
+void buildPresetSchema(ConfigSchemaManager& mgr, ConfigSchemaI18N& i18n, const json& main,
+                       const json& i18nJson, const std::string& preset, PresetType presetType)
+{
+    buildMetaDataSchema(mgr, main, presetType);
+
+    if (i18nJson.is_object())
+    {
+        if (i18nJson.contains("keys") && i18nJson["keys"].is_object())
+            for (auto it = i18nJson["keys"].begin(); it != i18nJson["keys"].end(); ++it)
+                if (it.value().is_object())
+                    i18n.mergeKey(it.key(), it.value());
+        if (i18nJson.contains("tabs") && i18nJson["tabs"].is_object())
+            for (auto it = i18nJson["tabs"].begin(); it != i18nJson["tabs"].end(); ++it)
+                if (it.value().is_object())
+                    i18n.m_tabs[it.key()] = parseI18nField(it.value());
+        if (i18nJson.contains("groups") && i18nJson["groups"].is_object())
+            for (auto it = i18nJson["groups"].begin(); it != i18nJson["groups"].end(); ++it)
+                if (it.value().is_object())
+                    i18n.m_groups[it.key()] = parseI18nField(it.value());
+    }
+
+    buildLayoutSchema(mgr, i18n, main, preset, presetType);
 }
 
 bool loadPresetSchema(ConfigSchemaManager& mgr, ConfigSchemaI18N& i18n,

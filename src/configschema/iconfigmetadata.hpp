@@ -12,15 +12,18 @@ struct IConfigMetaData
     virtual std::string key() const = 0;
     virtual ConfigMetaType type() const = 0;
     virtual ConfigMetaScope scope() const = 0;
-    virtual ConfigMetaMode mode() const = 0;
-    virtual ConfigMetaWidgetType widget() const = 0;
-    virtual bool editEnabled() const = 0;
     virtual SlicerVariant defaultValue() const = 0;
     virtual SlicerVariant values() const = 0;
     virtual SlicerVariant min() const = 0;
     virtual SlicerVariant max() const = 0;
-    virtual std::string hyperlinkUrl() const = 0;
     virtual SlicerVariant property(const std::string& propertyKey) const = 0;
+
+    // ui
+    virtual bool editEnabled() const = 0;
+    virtual ConfigMetaMode mode() const = 0;
+    virtual ConfigMetaWidgetType widget() const = 0;
+    virtual std::string hyperlinkUrl() const = 0;
+    virtual SlicerVariant uiProperty(const std::string& propertyKey) const = 0;
 };
 
 }

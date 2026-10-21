@@ -10,7 +10,12 @@ I18nField parseI18nField(const nlohmann::json& f)
     {
         for (auto it = f.begin(); it != f.end(); ++it)
             if (it.value().is_string())
-                out.langs[it.key()] = it.value().get<std::string>();
+            {
+                std::string lang = it.key();
+                if (lang == "text")
+                    lang.clear();
+                out.langs[std::move(lang)] = it.value().get<std::string>();
+            }
     }
     else if (f.is_string())
     {

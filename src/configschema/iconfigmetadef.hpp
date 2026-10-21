@@ -101,12 +101,12 @@ inline std::unordered_map<std::string, ConfigMetaType> s_configMetaTypeMap = {
 inline std::unordered_map<std::string, ConfigMetaWidgetType> s_configMetaWidgetTypeMap = {
     {"editline",                ConfigMetaWidgetType::EditLine},
     {"textarea",                ConfigMetaWidgetType::TextArea},
-    {"editserialized",          ConfigMetaWidgetType::EditSerialized},
+    {"edit_serialized",         ConfigMetaWidgetType::EditSerialized},
     {"combobox",                ConfigMetaWidgetType::ComboBox},
-    {"comboboxedit",            ConfigMetaWidgetType::ComboBoxEdit},
+    {"combobox_edit",           ConfigMetaWidgetType::ComboBoxEdit},
     {"checkbox",                ConfigMetaWidgetType::CheckBox},
-    {"checkboxoverrideedit",    ConfigMetaWidgetType::CheckBoxOverrideEdit},
-    {"pointedit",               ConfigMetaWidgetType::PointEdit},
+    {"checkbox_override_edit",  ConfigMetaWidgetType::CheckBoxOverrideEdit},
+    {"point",                   ConfigMetaWidgetType::PointEdit},
     {"color",                   ConfigMetaWidgetType::Color},
     {"filepicker",              ConfigMetaWidgetType::FilePicker}
 };
