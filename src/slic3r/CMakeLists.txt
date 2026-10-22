@@ -487,6 +487,8 @@ set(SLIC3R_GUI_SOURCES
     GUI/WebUserLoginDialog.hpp
     GUI/WebViewDialog.cpp
     GUI/WebViewDialog.hpp
+    GUI/WebViewDevDialog.cpp
+    GUI/WebViewDevDialog.hpp
     GUI/Widgets/AMSControl.cpp
     GUI/Widgets/AMSControl.hpp
     GUI/Widgets/AMSItem.cpp
@@ -751,6 +753,9 @@ encoding_check(libslic3r_gui)
 
 find_package(libnoise REQUIRED)
 target_link_libraries(libslic3r_gui libslic3r cereal::cereal imgui imguizmo minilzo GLEW::GLEW OpenGL::GL hidapi ${wxWidgets_LIBRARIES} glfw libcurl OpenSSL::SSL OpenSSL::Crypto noise::noise nanosvg)
+
+# Orca webview / jsbridge / plugin framework (plugin-market groundwork).
+target_link_libraries(libslic3r_gui orca::webview orca::jsbridge orca::plugin)
 
 if (MSVC)
     target_link_libraries(libslic3r_gui Setupapi.lib)

@@ -41,6 +41,7 @@
 #include "GLCanvas3D.hpp"
 #include "Plater.hpp"
 #include "WebViewDialog.hpp"
+#include "WebViewDevDialog.hpp"
 #include "../Utils/Process.hpp"
 #include "format.hpp"
 // BBS
@@ -2435,6 +2436,14 @@ static wxMenu* generate_help_menu()
         };
         new DelayedReleaseTimer(dlg); // Timer will delete itself
     });
+
+    // Orca webview / jsbridge framework verification window (internal
+    // developer mode only; the gate runs inside show_webview_dev_dialog
+    // because internal_developer_mode is a session-scoped switch that is
+    // reset on every startup and toggled at runtime from Preferences).
+    append_menu_item(helpMenu, wxID_ANY, _L("Webview Framework Dev Window") + sep + ctrl + shift + "Alt+W",
+        _L("Open the webview framework developer verification window"),
+        [](wxCommandEvent&) { Slic3r::GUI::show_webview_dev_dialog(wxGetApp().mainframe); });
 
     // About
 #ifndef __APPLE__

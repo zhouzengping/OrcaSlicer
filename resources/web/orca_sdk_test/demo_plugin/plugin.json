@@ -1,0 +1,11 @@
+{
+    "orca_manifest": 1,
+    "id": "com.orca.demo",
+    "name": "Demo Plugin",
+    "version": "0.1.0",
+    "entry": "index.html",
+    "description": "Plugin host smoke test",
+    "permissions": [
+        "demo.special"
+    ]
+}

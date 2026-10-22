@@ -1,0 +1,14 @@
+{
+    "orca_manifest": 1,
+    "id": "com.orca.full",
+    "name": "Full Plugin",
+    "version": "2.3.4",
+    "entry": "ui/main.html",
+    "permissions": [
+        "demo.special",
+        "device.read"
+    ],
+    "min_host_version": "1.0.0",
+    "description": "Exercise every manifest field",
+    "icon": "icon.png"
+}

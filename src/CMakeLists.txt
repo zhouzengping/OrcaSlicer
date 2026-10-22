@@ -18,6 +18,12 @@ set(PAHO_MQTT_C_PATH "${CMAKE_CURRENT_SOURCE_DIR}/mqtt/externals/paho-mqtt-c" CA
 
 add_subdirectory(libslic3r)
 
+# Orca webview / jsbridge / plugin framework (plugin-market groundwork).
+# wx-free DLLs; consumers link orca::webview / orca::jsbridge / orca::plugin.
+add_subdirectory(orca_webview)
+add_subdirectory(orca_jsbridge)
+add_subdirectory(orca_plugin_host)
+
 if (SLIC3R_GUI)
     # imgui, imguizmo, and hidapi are now included from deps_src
 

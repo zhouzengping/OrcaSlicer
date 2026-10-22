@@ -1,0 +1,6 @@
+{
+    "orca_manifest": 1,
+    "id": "com.orca.badversion",
+    "name": "Bad Version Plugin",
+    "version": "1.2"
+}

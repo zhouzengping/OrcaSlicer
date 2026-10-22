@@ -1,0 +1,6 @@
+{
+    "orca_manifest": 1,
+    "id": "com.orca.minimal",
+    "name": "Minimal Plugin",
+    "version": "1.0.0"
+}

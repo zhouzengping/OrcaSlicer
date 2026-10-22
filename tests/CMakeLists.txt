@@ -92,5 +92,10 @@ add_subdirectory(libslic3r)
 add_subdirectory(slic3rutils)
 add_subdirectory(fff_print)
 add_subdirectory(sla_print)
+# Orca webview / jsbridge / plugin framework suites: pure logic against the
+# frozen orca_* public headers, no link to libslic3r or the GUI.
+add_subdirectory(orca_webview)
+add_subdirectory(orca_jsbridge)
+add_subdirectory(orca_plugin_host)
 add_subdirectory(cpp17 EXCLUDE_FROM_ALL)    # does not have to be built all the time
 # add_subdirectory(example)
