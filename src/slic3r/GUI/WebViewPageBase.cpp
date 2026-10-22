@@ -16,15 +16,6 @@ namespace GUI {
 namespace
 {
 
-std::string user_local_data_dir()
-{
-    // WINDOWS ONLY: WebView2 permits a single user data folder per process.
-    // Must stay byte-identical to the folder every wxWebViewEdge instance in
-    // this process uses (see wv::WebView::Config docs).
-    const wxScopedCharBuffer buf = wxStandardPaths::Get().GetUserLocalDataDir().ToUTF8();
-    return std::string(buf.data(), buf.length());
-}
-
 // Legacy bridge for unmodified flutter pages: they call window.wx.postMessage.
 #if defined(_WIN32)
 constexpr const char* g_wx_compat_shim =
@@ -60,6 +51,15 @@ void run_script_when_ready(std::weak_ptr<orca::wv::WebView> weak, const std::str
 
 } // namespace
 
+std::string webview_user_data_dir()
+{
+    // WINDOWS ONLY: WebView2 permits a single user data folder per process.
+    // Must stay byte-identical to the folder every wxWebViewEdge instance in
+    // this process uses (see wv::WebView::Config docs).
+    const wxScopedCharBuffer buf = wxStandardPaths::Get().GetUserLocalDataDir().ToUTF8();
+    return std::string(buf.data(), buf.length());
+}
+
 WebViewPageBase::WebViewPageBase(wxWindow* parent)
     : wxPanel(parent, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxTAB_TRAVERSAL)
 {
@@ -82,6 +82,11 @@ void* WebViewPageBase::sswcp_handle() const
     return m_view.get();
 }
 
+void* WebViewPageBase::native_host_handle() const
+{
+    return m_host_panel ? m_host_panel->GetHandle() : nullptr;
+}
+
 bool WebViewPageBase::create_view(const orca::wv::WebView::Config& cfg)
 {
     if (m_view)
@@ -89,7 +94,7 @@ bool WebViewPageBase::create_view(const orca::wv::WebView::Config& cfg)
 
     orca::wv::WebView::Config config = cfg;
     if (config.browser_data_dir.empty())
-        config.browser_data_dir = user_local_data_dir();
+        config.browser_data_dir = webview_user_data_dir();
     // Ride ahead of every page script so flutter pages can post from line one.
     config.extra_init_scripts.insert(config.extra_init_scripts.begin(), g_wx_compat_shim);
 

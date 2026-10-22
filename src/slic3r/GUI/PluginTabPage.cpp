@@ -16,5 +16,21 @@ PluginTabPage::PluginTabPage(wxWindow* parent, std::shared_ptr<orca::plugin::Plu
     }
 }
 
+bool PluginTabPage::adopt_session(std::shared_ptr<orca::plugin::PluginSession> session)
+{
+    if (m_session || !session)
+        return false;
+
+    m_session   = std::move(session);
+    m_plugin_id = m_session->id();
+    adopt_view(m_session->webview());
+    return true;
+}
+
+void* PluginTabPage::native_host_handle() const
+{
+    return WebViewPageBase::native_host_handle();
+}
+
 } // GUI
 } // Slic3r

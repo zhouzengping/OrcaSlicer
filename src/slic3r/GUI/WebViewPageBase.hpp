@@ -13,6 +13,13 @@ namespace Slic3r {
 namespace GUI {
 
 /*
+ * Shared WebView2 user data folder. WINDOWS ONLY: WebView2 permits a single
+ * user data folder per process, so every native webview config (flutter hosts
+ * and the plugin host alike) must use this exact byte-identical string.
+ */
+std::string webview_user_data_dir();
+
+/*
  * Common host panel for web pages on the orca webview stack. Owns the native
  * view lifecycle (create / resize / close), always injects the legacy wx
  * postMessage shim so unmodified flutter pages keep working, registers the
@@ -58,6 +65,9 @@ protected:
     // Only for pages speaking the jsbridge SDK (plugin system).
     bool attach_bridge(const orca::jb::BridgeConfig& cfg, const orca::jb::SessionInfo& session);
     orca::jb::Bridge* bridge() const { return m_bridge.get(); }
+
+    // Native window handle a plugin session webview can be parented to.
+    void* native_host_handle() const;
 
     // Uplink hook; default feeds SSWCP and the flutter WCP watchdog.
     virtual void on_message(const std::string& json);

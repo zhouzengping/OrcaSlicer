@@ -1,6 +1,7 @@
 #include "WebViewDevDialog.hpp"
 
 #include "I18N.hpp"
+#include "WebViewPageBase.hpp"
 #include "slic3r/GUI/GUI_App.hpp"
 #include "libslic3r/Utils.hpp"
 
@@ -27,16 +28,6 @@ namespace
 
 // Singleton instance; repeated menu triggers just raise the open window.
 WebViewDevDialog* s_dev_dialog = nullptr;
-
-std::string user_local_data_dir()
-{
-    // WINDOWS ONLY: WebView2 permits a single user data folder per process.
-    // This string must stay byte-identical to the folder every wxWebViewEdge
-    // instance in this process uses (see wv::WebView::Config docs), otherwise
-    // the second environment creation is rejected.
-    const wxScopedCharBuffer buf = wxStandardPaths::Get().GetUserLocalDataDir().ToUTF8();
-    return std::string(buf.data(), buf.length());
-}
 
 void show_status_error(wxWindow* parent, const orca::wv::Status& status)
 {
@@ -92,7 +83,7 @@ void WebViewDevDialog::build_ui()
 void WebViewDevDialog::create_webview()
 {
     orca::wv::WebView::Config cfg;
-    cfg.browser_data_dir = user_local_data_dir();
+    cfg.browser_data_dir = webview_user_data_dir();
     cfg.devtools         = true;
 
     orca::wv::CustomScheme scheme;
@@ -223,7 +214,7 @@ void WebViewDevDialog::ensure_plugin_host()
         return;
 
     const boost::filesystem::path store_path =
-        boost::filesystem::path(user_local_data_dir()) / "plugin" / "permissions.json";
+        boost::filesystem::path(webview_user_data_dir()) / "plugin" / "permissions.json";
     boost::system::error_code ec;
     boost::filesystem::create_directories(store_path.parent_path(), ec);
     m_plugin_store_path = store_path.string();
@@ -231,7 +222,7 @@ void WebViewDevDialog::ensure_plugin_host()
     orca::plugin::HostEnv env;
     env.host_version          = SLIC3R_VERSION;
     env.dispatcher            = [](std::function<void()> fn) { wxTheApp->CallAfter(fn); };
-    env.browser_data_dir      = user_local_data_dir();   // same shared WebView2 folder
+    env.browser_data_dir      = webview_user_data_dir();   // same shared WebView2 folder
     env.permission_store_path = m_plugin_store_path;
     m_plugin_host             = std::make_unique<orca::plugin::PluginHost>(env);
 

@@ -5,7 +5,10 @@
 #include <string>
 #include <vector>
 
+#include <wx/window.h>
+
 #include "orca/jsbridge/bridge.hpp"
+#include "orca/plugin/manifest.hpp"
 #include "orca/plugin/plugin_host.hpp"
 
 namespace Slic3r {
@@ -54,8 +57,20 @@ public:
     std::vector<std::string> installed_ids() const;
 
 private:
+    // Modal wxYES_NO prompt for every manifest permission still Unknown in
+    // the persistent store; granted tags are written back before host load.
+    void prompt_plugin_permissions(const orca::plugin::PluginManifest& manifest, wxWindow* parent);
+
+    /*
+     * Install a plugin from a picked path into <plugins_root>/<manifest id>/.
+     * kind: "zip" archive or "dir" folder; both accept an extra top-level
+     * wrapper directory. Overwrites an existing installation of the same id.
+     */
+    bool import_plugin_from(const std::string& path, const std::string& kind, std::string& plugin_id, std::string& error);
+
     std::unique_ptr<orca::plugin::PluginHost> m_host;
     std::string                               m_plugins_root;
+    std::string                               m_permission_store_path;
 };
 
 } // GUI
