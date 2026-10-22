@@ -154,6 +154,13 @@ h1 {
 .btn-danger { color: var(--danger); background: transparent; }
 .btn-danger:hover { background: var(--danger-weak); }
 
+/* Armed state of the two-step delete confirmation: solid danger fill. */
+.btn-danger.armed,
+.btn-danger.armed:hover {
+    background: var(--danger);
+    color: #ffffff;
+}
+
 .btn-sm {
     padding: 6px 12px;
     font-size: 13px;
@@ -355,6 +362,13 @@ h1 {
     gap: 8px;
     margin-top: auto;
     padding-top: 16px;
+}
+
+/* Shown while the delete confirmation is armed on a running plugin. */
+.remove-note {
+    margin-top: 10px;
+    font-size: 12px;
+    color: var(--danger);
 }
 
 .card-actions .btn-danger { margin-left: auto; }

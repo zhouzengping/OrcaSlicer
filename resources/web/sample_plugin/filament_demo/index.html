@@ -299,7 +299,11 @@
                     render(filaments);
                 }
             } catch (err) {
-                showError((err && err.message) ? err.message : String(err));
+                // -32000 = bridge PermissionDenied: the manifest permission was
+                // not granted; anything else surfaces the raw message.
+                showError((err && err.code === -32000)
+                    ? '无权读取项目耗材：请在打开插件时授予相应权限。'
+                    : ((err && err.message) ? err.message : String(err)));
             } finally {
                 refreshing = false;
                 refreshBtn.disabled = false;

@@ -26,6 +26,9 @@ const STRINGS = {
         remove: '删除',
         running: '运行中',
         no_description: '暂无描述',
+        confirm_remove: '确认删除？',
+        confirm_remove_running: '关闭并删除？',
+        remove_running_note: '该插件正在运行，删除前会先将其关闭。',
         empty_title: '还没有插件',
         empty_body: '从本地导入插件压缩包或文件夹，或先安装示例插件体验插件中心。',
         install_sample: '安装示例插件',
@@ -37,7 +40,9 @@ const STRINGS = {
         err_generic: '操作失败',
         toast_import_ok: '插件导入成功',
         toast_remove_ok: '插件已删除',
-        toast_install_ok: '示例插件已安装'
+        toast_install_ok: '示例插件已安装',
+        toast_open_ok: '插件已打开',
+        toast_close_ok: '插件已关闭'
     },
     'en-US': {
         page_title: 'Plugin Center',
@@ -49,6 +54,9 @@ const STRINGS = {
         remove: 'Delete',
         running: 'Running',
         no_description: 'No description',
+        confirm_remove: 'Confirm delete?',
+        confirm_remove_running: 'Close and delete?',
+        remove_running_note: 'This plugin is running; it is closed before deletion.',
         empty_title: 'No plugins yet',
         empty_body: 'Import a plugin archive or folder from disk, or install the sample plugin to try it out.',
         install_sample: 'Install Sample Plugin',
@@ -60,7 +68,9 @@ const STRINGS = {
         err_generic: 'Action failed',
         toast_import_ok: 'Plugin imported',
         toast_remove_ok: 'Plugin removed',
-        toast_install_ok: 'Sample plugin installed'
+        toast_install_ok: 'Sample plugin installed',
+        toast_open_ok: 'Plugin opened',
+        toast_close_ok: 'Plugin closed'
     }
 };
 
@@ -222,7 +232,9 @@ function showLoading() {
 
 function showEmpty() {
     const btn = makeButton('btn btn-primary', 'box', t('install_sample'));
-    btn.addEventListener('click', installSample);
+    btn.addEventListener('click', function () {
+        callAction('plugin.install_sample', {}, 'toast_install_ok', btn);
+    });
     setMain(buildState('box', t('empty_title'), t('empty_body'), btn));
 }
 
@@ -313,18 +325,59 @@ function buildCard(p) {
         p.running ? 'close' : 'open',
         p.running ? t('close') : t('open'));
     toggle.addEventListener('click', function () {
-        callAction(p.running ? 'plugin.close' : 'plugin.open', { id: p.id });
+        callAction(p.running ? 'plugin.close' : 'plugin.open', { id: p.id },
+            p.running ? 'toast_close_ok' : 'toast_open_ok', toggle);
     });
     actions.appendChild(toggle);
 
-    const del = makeButton('btn btn-danger btn-sm', 'trash', t('remove'));
-    del.addEventListener('click', function () {
-        callAction('plugin.remove', { id: p.id }, 'toast_remove_ok');
-    });
-    actions.appendChild(del);
+    actions.appendChild(buildDeleteButton(card, p));
     card.appendChild(actions);
 
     return card;
+}
+
+/*
+ * Delete runs in two steps instead of a native confirm() dialog (unavailable
+ * in the webview): the first click arms the button and -- for a running
+ * plugin -- spells out that the host closes it before deleting. The arm state
+ * self-resets; the second click fires plugin.remove.
+ */
+const DELETE_ARM_MS = 4000;
+
+function buildDeleteButton(card, p) {
+    const btn = makeButton('btn btn-danger btn-sm', 'trash', t('remove'));
+    let armed = false;
+    let timer = null;
+    let note = null;
+
+    const disarm = function () {
+        armed = false;
+        clearTimeout(timer);
+        btn.classList.remove('armed');
+        btn.replaceChild(el('span', null, t('remove')), btn.lastChild);
+        if (note && note.parentNode) {
+            note.parentNode.removeChild(note);
+        }
+        note = null;
+    };
+
+    btn.addEventListener('click', function () {
+        if (!armed) {
+            armed = true;
+            timer = setTimeout(disarm, DELETE_ARM_MS);
+            btn.classList.add('armed');
+            btn.replaceChild(el('span', null, p.running ? t('confirm_remove_running') : t('confirm_remove')), btn.lastChild);
+            if (p.running) {
+                note = el('div', 'remove-note', t('remove_running_note'));
+                card.insertBefore(note, btn.parentNode);
+            }
+            return;
+        }
+        disarm();
+        callAction('plugin.remove', { id: p.id }, 'toast_remove_ok', btn);
+    });
+
+    return btn;
 }
 
 // ---------------------------------------------------------------------------
@@ -335,11 +388,16 @@ function errorText(err) {
     return (err && err.message) ? err.message : String(err);
 }
 
-// Runs one wire action, toasts failures, refreshes the list on success.
-async function callAction(method, params, okKey) {
+// Runs one wire action, toasts failures, refreshes the list on success. The
+// triggering button is disabled while the call is in flight so a double click
+// cannot fire the action twice.
+async function callAction(method, params, okKey, btn) {
     if (!window.orca) {
         showNotConnected();
         return;
+    }
+    if (btn) {
+        btn.disabled = true;
     }
     try {
         const res = await window.orca.call(method, params);
@@ -353,6 +411,10 @@ async function callAction(method, params, okKey) {
         }
     } catch (err) {
         toast(errorText(err), 'err');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+        }
     }
 }
 
@@ -392,10 +454,6 @@ async function importFromDisk(kindHint) {
     }
 }
 
-function installSample() {
-    callAction('plugin.install_sample', {}, 'toast_install_ok');
-}
-
 async function refreshList() {
     if (!window.orca) {
         showNotConnected();
@@ -413,6 +471,10 @@ async function refreshList() {
         showError(errorText(err));
     }
 }
+
+// page.state "active" dedupe window, see the handler in init().
+const ACTIVE_REFRESH_DEDUPE_MS = 300;
+let lastActiveRefreshAt = 0;
 
 // Host version shown in the footer; best effort only.
 async function loadHostInfo() {
@@ -455,11 +517,22 @@ async function init() {
         return;
     }
 
-    // Keep the list fresh whenever this tab becomes active again.
+    // Keep the list fresh whenever this tab becomes active again (running
+    // flags and card actions may have changed while a plugin tab was open).
+    // Bursts of "active" collapse into one pull; the clock keys on the last
+    // active-handled time -- not the last refresh -- so an "active" arriving
+    // right after an action-triggered refresh (e.g. the opened plugin tab is
+    // middle-click-closed and focus bounces back) is never swallowed.
     window.orca.on('page.state', function (e) {
-        if (e && e.state === 'active') {
-            refreshList();
+        if (!e || e.state !== 'active') {
+            return;
         }
+        const now = Date.now();
+        if (now - lastActiveRefreshAt < ACTIVE_REFRESH_DEDUPE_MS) {
+            return;
+        }
+        lastActiveRefreshAt = now;
+        refreshList();
     });
 
     showLoading();
