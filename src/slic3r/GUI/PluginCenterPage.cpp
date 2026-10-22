@@ -6,6 +6,8 @@
 
 #include <boost/filesystem.hpp>
 
+#include <wx/app.h>
+
 namespace Slic3r {
 namespace GUI {
 
@@ -59,6 +61,13 @@ void PluginCenterPage::setup_page()
     // "https://plugin-center.orca", macOS/Linux through the custom scheme.
     // Origin matching is exact, so at most one ever applies.
     bridge_cfg.allowed_origins = {"https://plugin-center.orca", "plugin-center://center"};
+    // Async responders marshal their completion through the dispatcher; route
+    // it to the UI thread explicitly (same body as the attach_bridge default
+    // fallback) instead of relying on that default staying correct.
+    bridge_cfg.dispatcher = [](std::function<void()> fn) { wxTheApp->CallAfter(fn); };
+    // Same value as the BridgeConfig default; pinned explicitly so the center
+    // page does not silently follow future default changes.
+    bridge_cfg.api_timeout_ms = 30000;
 
     orca::jb::SessionInfo session;
     session.session_id = "plugin-center";

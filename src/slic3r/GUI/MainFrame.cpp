@@ -1270,6 +1270,34 @@ void MainFrame::init_tabpanel() {
         }*/
     });
 
+    // Close requests from closable tab buttons (right / middle click on a
+    // dynamic plugin tab, posted by ButtonsListCtrl). init_tabpanel runs once
+    // per MainFrame and a GUI recreate builds a whole new tabpanel, so this
+    // never binds twice on the same window.
+    m_tabpanel->Bind(wxCUSTOMEVT_NOTEBOOK_PAGE_CLOSE, [this](wxCommandEvent& evt)
+    {
+        const int idx = evt.GetInt();
+        if (idx < 0 || size_t(idx) >= m_tabpanel->GetPageCount())
+            return;
+
+        // Resolve the page pointer before anything can shift indices; the
+        // index itself must not be used again after this point.
+        PluginTabPage* page = dynamic_cast<PluginTabPage*>(m_tabpanel->GetPage(size_t(idx)));
+        if (!page)
+            return;
+
+        // Only dynamic plugin tabs are closable; the owning map entry carries
+        // the plugin id close_plugin_tab needs.
+        for (const auto& item : m_plugin_tabs)
+        {
+            if (item.second.get() == page)
+            {
+                close_plugin_tab(item.first);
+                return;
+            }
+        }
+    });
+
     if (wxGetApp().is_editor()) {
         m_webview         = new WebViewPanel(m_tabpanel);
         Bind(EVT_LOAD_URL, [this](wxCommandEvent &evt) {

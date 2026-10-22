@@ -39,6 +39,9 @@ private:
     wxBoxSizer*                     m_sizer;
     // BBS: use Button
     std::vector<Button*>            m_pageButtons;
+    // Parallel to m_pageButtons: whether the tab button requests a page
+    // close on right / middle click.
+    std::vector<bool>               m_pageClosable;
     int                             m_selection {-1};
     int                             m_btn_margin;
     int                             m_line_margin;

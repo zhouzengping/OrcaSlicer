@@ -20,7 +20,9 @@ namespace GUI {
 class PluginTabPage : public WebViewPageBase, public std::enable_shared_from_this<PluginTabPage>
 {
 public:
-    PluginTabPage(wxWindow* parent, std::shared_ptr<orca::plugin::PluginSession> session);
+    // Constructed empty; adopt_session is the only session binding entry
+    // (it owns the on_created bounds wrap the tab depends on).
+    PluginTabPage(wxWindow* parent);
 
     /*
      * Late-bind a session created against this tab's host handle: the native

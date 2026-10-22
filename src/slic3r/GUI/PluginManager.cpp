@@ -448,9 +448,26 @@ void PluginManager::register_center_apis(orca::jb::Bridge* bridge)
             boost::system::error_code ec;
             boost::filesystem::remove_all(boost::filesystem::path(m_plugins_root) / plugin_id, ec);
             if (ec)
+            {
                 responder.send_result(orca::jb::Json{{"ok", false}, {"error", ec.message()}});
-            else
-                responder.send_result(orca::jb::Json{{"ok", true}});
+                return;
+            }
+
+            // Escape hatch against permission lock-out: grants are keyed by
+            // plugin id, so a persisted denial would survive "remove +
+            // reinstall" and the plugin could never be opened again. Clearing
+            // them here makes a reinstall prompt fresh. Failures only log:
+            // the directory is already gone, so the removal stays a success.
+            if (orca::plugin::PluginHost* host = ensure_host())
+            {
+                const orca::wv::Status revoke_status = host->permission_store().revoke_all(plugin_id);
+                if (!revoke_status.ok())
+                    BOOST_LOG_TRIVIAL(error) << "PluginManager: permission revoke_all failed for " << plugin_id << ": " << revoke_status.message;
+                const orca::wv::Status save_status = host->permission_store().save();
+                if (!save_status.ok())
+                    BOOST_LOG_TRIVIAL(error) << "PluginManager: permission store save failed for " << plugin_id << ": " << save_status.message;
+            }
+            responder.send_result(orca::jb::Json{{"ok", true}});
         });
     };
     register_api_checked(bridge, "plugin.remove", plugin_remove);
@@ -585,7 +602,7 @@ std::shared_ptr<PluginTabPage> PluginManager::open_plugin(const std::string& plu
 
     // The tab panel must exist before load: the session webview is parented
     // to its native handle, then bound back into the tab.
-    auto tab = std::make_shared<PluginTabPage>(tab_parent, nullptr);
+    auto tab = std::make_shared<PluginTabPage>(tab_parent);
 
     orca::wv::Status status;
     std::shared_ptr<orca::plugin::PluginSession> session =

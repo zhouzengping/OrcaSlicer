@@ -171,7 +171,7 @@ void ButtonsListCtrl::SetSelection(int sel)
     Refresh();
 }
 
-bool ButtonsListCtrl::InsertPage(size_t n, const wxString &text, bool bSelect /* = false*/, const std::string &bmp_name /* = ""*/, const std::string &inactive_bmp_name /* = ""*/, bool /*closable*/)
+bool ButtonsListCtrl::InsertPage(size_t n, const wxString &text, bool bSelect /* = false*/, const std::string &bmp_name /* = ""*/, const std::string &inactive_bmp_name /* = ""*/, bool closable)
 {
     Button * btn = new Button(this, text.empty() ? text : " " + text, bmp_name, wxNO_BORDER);
     btn->SetCornerRadius(0);
@@ -195,14 +195,32 @@ bool ButtonsListCtrl::InsertPage(size_t n, const wxString &text, bool bSelect /*
             auto sel = it - m_pageButtons.begin();
             //do it later
             //SetSelection(sel);
-            
+
             wxCommandEvent evt = wxCommandEvent(wxCUSTOMEVT_NOTEBOOK_SEL_CHANGED);
             evt.SetId(sel);
             wxPostEvent(this->GetParent(), evt);
         }
     });
+    if (closable)
+    {
+        // Right / middle click on a closable tab requests a page close. The
+        // index is looked up at dispatch time (like SEL_CHANGED above), so it
+        // stays correct across insertions and removals.
+        auto request_close = [this, btn](wxMouseEvent&)
+        {
+            if (auto it = std::find(m_pageButtons.begin(), m_pageButtons.end(), btn); it != m_pageButtons.end())
+            {
+                wxCommandEvent evt = wxCommandEvent(wxCUSTOMEVT_NOTEBOOK_PAGE_CLOSE);
+                evt.SetInt(int(it - m_pageButtons.begin()));
+                wxPostEvent(this->GetParent(), evt);
+            }
+        };
+        btn->Bind(wxEVT_RIGHT_DOWN, request_close);
+        btn->Bind(wxEVT_MIDDLE_DOWN, request_close);
+    }
     Slic3r::GUI::wxGetApp().UpdateDarkUI(btn);
     m_pageButtons.insert(m_pageButtons.begin() + n, btn);
+    m_pageClosable.insert(m_pageClosable.begin() + n, closable);
     m_buttons_sizer->Insert(n, new wxSizerItem(btn));
     m_buttons_sizer->SetCols(m_buttons_sizer->GetCols() + 1);
     m_sizer->Layout();
@@ -213,6 +231,7 @@ void ButtonsListCtrl::RemovePage(size_t n)
 {
     Button* btn = m_pageButtons[n];
     m_pageButtons.erase(m_pageButtons.begin() + n);
+    m_pageClosable.erase(m_pageClosable.begin() + n);
     m_buttons_sizer->Remove(n);
 #if __WXOSX__
     RemoveChild(btn);
