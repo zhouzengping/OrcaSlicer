@@ -646,3 +646,122 @@ plugin_host.cpp unload、PluginCenterPage bridge 配置。review 5/6 给的 1.4 
 ### 插件中心 tab 切语言 → 无崩溃、插件 tab 全关、新 frame 插件中心正常重载；
 ### 右键/中键关 tab + 中心页 Close 按钮两条关闭链各走一遍；remove 后 permissions.json
 ### 中该 id 条目清空、重装重开重新弹权限）。
+
+---
+
+## Round 1 / review 8 — c7838d2e83 "1.6 plugin center page completion"
+
+对照 DIRECTIVES 1.6 逐项核对。联动路径全部实读：app.js/app.css/index.html
+（中心页）与 sample_plugin（plugin.json/index.html）当前态、PluginManager.cpp
+register_center_apis 全部 9 个注册体、open_plugin/prompt_plugin_permissions
+权限链、orca_sdk.js 错误对象形状、protocol.hpp RpcErrc、bridge.cpp 权限拒绝帧、
+WebViewPageBase::notify_page_state / MainFrame PAGE_CHANGED 的 page.state 发射链、
+manifest.hpp/schema + validate_against_dir（icon 路径校验）。**无 MUST FIX；
+权限流缺口（B 项）确认已闭合。**
+
+- [OK] **B. 权限流真实触发（demo 完整性的关键缺口）— 已闭合，非本 commit 闭合
+  而是 cc32f2623b（review 5 已验收），本轮复核确认仍在**：
+  `sample_plugin/filament_demo/plugin.json` 的 permissions 为
+  `["project.filaments.read"]`（当前 HEAD、7eed4467b8 时点、cc32f2623b diff 三处
+  核实）。触发链完整：plugin.open（async CallAfter）→ open_plugin_tab →
+  open_plugin（PluginManager.cpp:595）→ prompt_plugin_permissions（:671）对
+  Unknown tag 弹 wxMessageDialog；Allow → 经 host 共享 store 的 grant 直达会话
+  策略（review 5 MUST FIX 1 修法）；Deny → revoke 持久化 + 干净失败。host 面的
+  orca.filament.list 带 "project.filaments.read" tag（:573），被拒时
+  bridge.cpp:446 发 RpcErrc::PermissionDenied = -32000 错误帧（protocol.hpp:25）
+  → SDK settle() 构造 `err.code = -32000` 的 Error reject（orca_sdk.js:77-83）
+  → sample 页 `err.code === -32000` 专属提示，逐环对得上。1.7 冒烟可走全
+  prompt → grant → Allow → API 通的链路。
+- [OK] **A. 七项 UI 齐备且全部走 orca SDK，API 名逐一命中**：插件列表
+  （id/name/version/running 徽章 + description/permissions chips，字段与
+  plugin.list 产出 PluginManager.cpp:346-354 全对上）、install_sample（空态按钮）、
+  导入 zip / 导入文件夹（header 双按钮 → pick_import {kind} → import
+  {path,kind}）、打开/关闭（卡片 toggle 按 running 切换 plugin.open/close）、
+  移除（两步武装确认删除）。响应形状逐个核对：list 消费 {plugins:[...]} 包裹；
+  import/install_sample 消费 {ok,id|error}；open/close/remove 消费 {ok,error}；
+  pick_import 消费 {path,kind}、空 path 静默取消——全部与 C++ 侧一致。1.6 未新增
+  C++ 调用（--stat 仅 web 资源），与冻结契约一致。
+- [OK] **C1. running 状态刷新时机（事件驱动，无轮询）**：动作成功即 refreshList；
+  page.state active 重拉 + 300ms 去重。去重锚点设计的正确性核实：时钟记在
+  "上次 active 处理" 而非 "上次刷新"，动作触发的 refreshList 不推进时钟 →
+  open 后立刻中键关 tab、焦点弹回中心页的 active 不会被吞（注释所述场景成立）。
+  中心页有 bridge → notify_page_state 走 emit 分支（WebViewPageBase.cpp:193），
+  PAGE_CHANGED → active/inactive 链对中心页真实可达（MainFrame.cpp:1236 +
+  PluginCenterPage wants_generic_page_state=true）。
+- [OK] **C2. 进行中/错误/并发防护**：callAction 禁用触发按钮（finally 恢复，
+  即使网格已重渲染、按钮已脱树也无害）；import 路径 importBusy + 双按钮禁用；
+  错误可见性全覆盖——ok:false → toast res.error、reject/超时 → toast
+  err.message、列表加载失败 → 带重试按钮的错误态、hello 3s 失败提前出错误态、
+  loadHostInfo 静默属声明过的 best-effort。双击：按钮禁用 + open_plugin_tab
+  幂等 select + CallAfter UI 线程串行，三层兜住。
+- [OK] **D. locale/dark_mode 消费**：locale 读 `?locale=`，缺省 zh-CN、未知值
+  回落 en-US、大小写不敏感精确键 + zh/zh-hans/en 别名；zh/en 两表 26/26 键
+  逐个数过、lockstep（commit message 声称属实）。dark_mode：index.html `<head>`
+  首绘前内联脚本把 `?dark_mode=0|1` 映射为 data-theme light/dark；app.css 三条
+  路径齐备（显式 dark、显式 light 经 `:not([data-theme="light"])` 压过系统
+  媒体查询、无参数时 prefers-color-scheme）——commit 声称 "re-verified across
+  all three CSS paths" 属实。sample 页仅随系统偏好（注释声明 host 不带参数，
+  与 plugin_host 导航模板一致）。
+- [OK] **E1. SDK 使用与安全卫生**：错误路径全处理（见 C2），无未消费的 reject；
+  page.state 订阅生命周期 = 页面生命周期 = webview 生命周期，无泄漏路径。
+  XSS：动态内容全部 createElement/textContent；唯一 innerHTML 是 makeIcon 的
+  静态 ICONS 表（有注释钉死）；icon 走 `<img src>`，manifest schema 强制相对
+  路径（无 `..`、无反斜杠、非绝对）+ import 时 validate_against_dir 要求
+  plugin root 下真实存在文件（PluginManager.cpp:788）→ 无注入面，
+  `javascript:` URL 对 `<img>` 在 Chromium 本就惰性；sample 页 swatch 的
+  style.background 赋值无法逃逸 CSS。干净。
+- [SHOULD FIX] **E2. sample 插件的 page.state 订阅当前是死线（review 7 备注 (a)
+  的直接后果，1.7 冒烟前应落地）**：PluginTabPage 自身无 bridge，
+  notify_page_state 走 else 分支 → page_state_notify_webview（SSWCP 订阅者）
+  → no-op；即 sample 页 "每次激活自动刷新" 的回调永不触发（手动刷新按钮可用，
+  不算断链）。修法很小：PluginTabPage 增加 notify_page_state override，经
+  `m_session->bridge()->emit("page.state", {state})` 转发（PluginSession 已暴露
+  bridge() 访问器，plugin_host.hpp:44）。若决定不做，则删掉 sample 页的订阅与
+  注释声明，别留一条 demo 里演示不出来的特性。
+- [SHOULD FIX] **C3. 权限被拒的中心页反馈是未本地化的笼统英文 toast**：open 被
+  拒时 plugin.open 返回 ok:false "failed to open plugin"（PluginManager.cpp:497），
+  中文界面里弹出英文通用文案，用户刚在原生对话框点了 No 却得不到"因权限被拒
+  而未打开"的明确反馈（sample 页的 -32000 提示此时不可达——插件根本没打开）。
+  建议：plugin.open 失败原因区分（open_plugin 返回 nullptr 的两个路径：权限拒 /
+  加载失败），中心页加对应本地化 toast 键。小改动，随 1.7 前的顺手 commit。
+- [OK] **F. 通用**：与既有 app.js/app.css 风格一致（strict、函数声明、英文注释、
+  BEM-ish 命名）；零 console.log/debugger 残留（三文件 grep 证实）；两步删除的
+  4s 自动解除、运行中插件的额外说明行、武装态样式均实现且注释清楚；
+  `git show --stat` 仅 3 个 web 资源文件，范围聚焦。工作区另有未提交的
+  backend_gtk/backend_mac/GUI_App 改动（内容对上登记的 E1/E2 框架修复 +
+  reload_page 调用方接线 GUI_App::reload_plugin_center_page），属另一条修复线
+  的半成品，不计入本轮，下轮见 commit 后验收。
+- 备注（不要求改）：(a) 卡片图标实际渲染不出——p.icon 是插件目录内相对路径，
+  在中心页 origin 下解析必 404 → error 回退字母占位（优雅降级，sample 未声明
+  icon，demo 无感；真要支持需 center 侧提供按 id 的图标端点或绝对虚拟主机 URL）；
+  (b) open 成功 toast 弹在刚被切走的中心页上，大概率无人看见即过期——无害；
+  (c) install_sample 仅空态可达——demo 闭环（装→开→关→删→回空态）不受影响，
+  非空列表下重装 sample 需先删光，可不改；(d) review 6 C1（reload_page 调用方）
+  本 commit 未接（web-only，合理），工作区 GUI_App 半成品疑似在做，落地后验收。
+
+### Verdict: APPROVED（1.6 本体零 MUST FIX；两条 SHOULD FIX 均小、建议随
+### 1.7 前的顺手 commit 落地）
+### Next: 1.7 冒烟准备。**前置硬条件**：(1) review 7 的 MUST FIX（MainFrame.cpp:
+### 1234 s_prev_web_page 函数级 static 改 MainFrame 成员）仍未修、也不在当前
+### 工作区——必须先以独立 commit 落地；(2) 工作区在飞的 E1/E2 + reload_page
+### 接线 commit 后由下轮验收。**1.7 冒烟清单（历轮汇总，执行时逐项记录进
+### FEEDBACK.md）**：
+### 1. MSVC 构建通过、无新警告（1.7 本体要求）。
+### 2. legacy 回归（review 1/2）：device/monitor 页（PrinterWebView）sw_* 回包经
+###    sink 到达页面；Monitor 页 StatusPanel 摄像头视图不受影响。
+### 3. 权限链（review 5/8）：open → 弹权限框 → Allow → 插件页 orca.filament.list
+###    出数据；点 No → 插件不打开、中心页出错误 toast、再次 open 不再弹窗直接拒；
+###    remove 后 permissions.json 中该 id 条目清空，重装重开重新弹权限。
+### 4. 插件 tab 白屏回归（review 5）：open 后 tab 首帧即有正确尺寸，无需手动
+###    resize；DevDialog Load demo plugin 后插件视图立即可见。
+### 5. 中心页全链（review 6/8）：插件中心 tab 打开即渲染列表（scheme/origin/bridge）；
+###    locale/dark_mode 参数生效（zh/en × dark/light/系统三路径）；页脚 host 版本号。
+### 6. UI 状态机（本轮）：两步删除（空闲/运行中两文案 + 4s 自动解除）；open/close
+###    成功 toast + 列表 running 徽章即时刷新；中键关插件 tab 后切回中心页徽章
+###    正确回落（page.state active 路径）；import zip 与文件夹各走一遍、取消静默；
+###    双击 open 幂等；sample 页手动刷新可用（E2 落地后加验：切走再切回自动刷新）。
+### 7. 生命周期（review 7）：开着插件中心 tab 切语言 → 无崩溃、插件 tab 全关、
+###    新 frame 插件中心正常重载；右键/中键关 tab 与中心页 Close 按钮两条关闭链
+###    各走一遍。
+### 8. 若 E1/E2 已落地：mac/linux 至少编译过（跨平台宣称的最低门槛），Windows
+###    行为无变化。
