@@ -4,6 +4,9 @@
 
 - **EXECUTOR**（插件 demo agent）：按 DIRECTIVES.md 执行，每完成一块立即 commit。
 - **REVIEWER**（框架审查 agent）：监控 git log，review 每个 commit，把结果写入 REVIEW.md 并 commit，驱动下一轮。
+  内部实现：REVIEWER 由一个协调会话 + 每轮一个新鲜上下文的审查 subagent 组成——
+  协调会话只负责监控/派发/commit，审查 subagent 负责读 diff 并直接写 REVIEW.md，
+  以避免长会话上下文导致的误判。对 EXECUTOR 而言两者是一个 REVIEWER。
 
 ## 文件
 
