@@ -522,3 +522,127 @@ m_is_recreating_gui 早退之前、两条路径各跑一次且 HWND 尚活；(b)
 C1）；(3) 非Windows框架修复 commit：mac report_url_changed（E1）+ mac/gtk 延迟
 report_created（E2）。1.7 冒烟按 review 5 清单 + 本轮新增：插件中心 tab 打开即
 渲染列表（验 scheme/origin/bridge 全链），locale/dark_mode 参数在页面生效。
+
+---
+
+## Round 1 / review 7 — 73e8a4d6ad + 54ad632374 "1.4 tab system + 1.5 closable tabs"
+
+两 commit 合并审查（同一子系统，1.5 含 review-5 riders）。联动路径全部实读：
+MainFrame 三函数与 PAGE_CHANGED/PAGE_CLOSE 处理、GUI_App::shutdown 与 recreate_GUI
+时序、Notebook/ButtonsListCtrl、PluginManager open/close/remove、PluginTabPage、
+plugin_host.cpp unload、PluginCenterPage bridge 配置。review 5/6 给的 1.4 设计输入
+四条（recreate teardown / 幂等+FindPage / adopt_session 统一 / 单向 close 链）
+全部兑现且实现正确；新引入 1 个 MUST FIX（recreate 下的静态悬垂指针）。
+
+- [OK] **A. tpPluginCenter 挂载**：与 m_project/m_calibration 同款创建模式
+  （MainFrame.cpp:1352-1353，unconditional AddPage + tab_plugin_active 图标 +
+  _L("Plugins") 文案），不进 show_device 换页集合——正确（show_device 只动
+  monitor/printer_view/multi/calibration）。tpPluginCenter=9 枚举追加无冲突
+  （MainFrame.hpp:225）。图标 tab_plugin_active.svg 与 tab_calibration_active
+  同规格（20×20、#fff stroke、square cap），ScalableBitmap 按名解析无需注册表。
+  小备注（不要求改）：show_device 里 "Calibration is always the last page"
+  注释（MainFrame.cpp:1404）本就因插件中心追加而过时，顺手续正即可。
+- [OK] **B. open_plugin_tab**（MainFrame.cpp:3696-3732）：幂等——map 命中 +
+  FindPage 找到 → SetSelection；map 命中但页面不在 notebook 的 stale 兜底
+  （erase 重建，防御性，实测无产生路径：外部无人 RemovePage 插件页）；
+  AddPage 失败回收 session（close_plugin 后 shared_ptr 析构窗口，安全）；
+  寻址全程 FindPage，无裸索引。async 双击重入：plugin.open 的 CallAfter FIFO
+  串行 + handler 内部才读 wxGetApp().mainframe（PluginManager.cpp:482，recreate
+  后取到新 frame），双击第二次走幂等 select。AddPage(bSelect=true) 同步触发
+  PAGE_CHANGED 时页面已活，无重入。
+- [OK] **C. close 单向链**（MainFrame.cpp:3734-3762）：RemovePage（PAGE_CHANGED
+  在页面存活时发射）→ close_plugin（HWND 尚活时 host unload）→ map erase
+  （shared_ptr 释放 → ~WebViewPageBase → close_view，adopted 视图只 reset 引用）。
+  **半关状态不可能**：PluginHost::unload 无论 session->close() 成败都先 erase
+  session（plugin_host.cpp:408-409）→ 不会"tab 删了 session 还 running"；
+  close_plugin_tab 无条件 erase map → 不会"session 关了 map 还挂着"。bridge 侧
+  plugin.close/plugin.remove（PluginManager.cpp:425-473）→ frame->close_plugin_tab
+  单向调用，close 链不回调 MainFrame，无重入。plugin.remove 对运行中插件先
+  close_plugin_tab 再删目录（:437-446），与 import 守卫对齐。
+- [OK] **D. recreate teardown（review 4/5 设计输入核心项，验收通过）**：
+  close_all_plugin_tabs 提升到 m_is_recreating_gui 早退**之前**
+  （GUI_App.cpp:1335-1342），两条 shutdown 路径各跑一次；时序核实——recreate_GUI
+  在 GUI_App.cpp:3945 调 mainframe->shutdown(true) → wxGetApp().shutdown →
+  close_all_plugin_tabs，全部发生在 :3977 old_main_frame->Destroy() 之前，
+  HWND 存活；真实退出路径（wxEVT_CLOSE_WINDOW → MainFrame.cpp:555 shutdown()
+  → 同链）先关 tab 再 reset manager。recreate 保留 manager 的决策有据
+  （WebView2 controller parentage 创建即固定，session 无法跨 frame 存活；注释
+  写明）。语言切换行为明确：插件 tab 全部关闭、session 全部卸载，新 frame 的
+  PluginCenterPage::setup_page 在幸存 manager 上重注册 center APIs（manager 不
+  持 bridge 指针，register_center_apis 按页注册，无悬垂）。
+- [OK] **E. session 入口统一（review 5 SHOULD FIX 兑现）**：带 session 的
+  PluginTabPage 构造重载已删（54ad632374 diff，PluginTabPage.cpp:6-9 现为空构造），
+  唯一调用方 open_plugin 改空构造 + adopt_session（PluginManager.cpp:605）；
+  on_created bounds wrap 只存在于 adopt_session（PluginTabPage.cpp:27-33），
+  死路径消除。全仓无其他构造调用点。
+- [OK] **F. closable 事件链**：ButtonsListCtrl::InsertPage 落地 closable 参数
+  （Notebook.cpp:204-220）——右键/中键 bind，**dispatch 时**按按钮指针查
+  m_pageButtons 取当前索引（与 SEL_CHANGED 同款模式，插入/删除后索引自动正确）；
+  wxPostEvent 到 Notebook → MainFrame 绑定（MainFrame.cpp:1277-1299）边界检查 →
+  立即解析页面指针（此后不再用索引）→ dynamic_cast 过滤非插件页 → 按指针查
+  map → close_plugin_tab。固定页 closable 全部默认 false，不受影响。绑定生命周期：
+  每帧 init_tabpanel 一次、绑在 m_tabpanel 上，recreate 建新 tabpanel，旧绑定随
+  旧窗口销毁，无泄漏、无双绑。m_pageButtons/m_pageClosable 仅 Insert/Remove 两处
+  同步维护（另见 SHOULD FIX 2）。
+- [OK] **G. review-5 riders 全部兑现**：(1) 逃生门——plugin.remove 目录删除成功
+  后 `host->permission_store().revoke_all(plugin_id)` + save（PluginManager.cpp:
+  456-469），失败仅记日志、remove 仍报成功（目录已删，语义正确）；revoke_all
+  返回 wv::Status 与 hpp:48 契约一致；reinstall 重新弹权限，锁死解除。
+  (2) 入口统一见 E。(3) center bridge 显式钉 dispatcher（CallAfter 回 UI 线程）
+  与 api_timeout_ms=30000（PluginCenterPage.cpp:64-70），与默认值等价、抗未来
+  默认漂移，落实 review 5 "显式更稳" 建议。
+- [MUST FIX] **PAGE_CHANGED 处理器新增的函数级 static 指针跨 recreate 悬垂
+  （UAF，新引入）** `MainFrame.cpp:1234` `static WebViewPageBase* s_prev_web_page`
+  是 lambda 内 static：所有 MainFrame 实例的 handler 共享同一变量，recreate 后
+  它仍指向旧 frame 已 Destroy 的 PluginCenterPage/PluginTabPage。当前编辑器模式
+  **碰巧**不炸：recreate_GUI 在 :3971 select_tab(tp3DEditor)（新 tabpanel 发
+  PAGE_CHANGED、panel 非 webview → else-if 分支把 static 清空）先于 :3977
+  old_main_frame->Destroy()。这个保护依赖另一文件 40 行外的调用顺序巧合，无任何
+  注释或断言；viewer 模式跳过 :3971、或将来有人调整 select_tab/Destroy 顺序，
+  新 tabpanel 首次 PAGE_CHANGED 即对已销毁窗口调 notify_page_state()（虚基成员
+  访问，无任何判活）→ UAF。修法（2 行）：把 prev-page 跟踪从 static 改为
+  MainFrame 成员（如 `WebViewPageBase* m_prev_web_page{nullptr};`，handler 捕
+  this 使用）——每帧独立生命周期，recreate 后新帧从 nullptr 起步，旧帧的指针随
+  旧帧消亡；紧邻的 `static int prev_monitored_tab` 是 int（无解引用）属存量，
+  不必同改。
+- [SHOULD FIX] **m_tab_map 新增 {"PluginCenter", tpPluginCenter=9} 是打不中的
+  裸索引**：消费链 SSWCP.cpp:1128-1129 → request_select_tab（MainFrame.cpp:
+  3830-3835）→ SetSelection(pos)（MainFrame.cpp:425-428）直接按枚举值选页。
+  实际运行时插件中心页在编辑器布局位于 6/7（multi-machine 有无各差一），
+  本构建无 auxiliary/debugtool 页，索引 9 永远越界——release 下 wxCHECK 记错
+  日志后 no-op，debug 下断言。存量九个条目同病（tpProject=5 在无 multi 布局
+  同样偏移），非本 commit 引入；但新条目不应延续坏模式，且与 DIRECTIVES 1.4
+  "寻址一律 FindPage 禁裸索引"精神相悖。修法：SSWCP 处理器对 PluginCenter 特判
+  `mainframe->select_tab(mainframe->m_plugin_center)`（MainFrame.cpp:3674 的
+  wxPanel* 重载内部即 FindPage），或在 m_tab_map 值侧引入"按 panel 解析"回调。
+- [SHOULD FIX]（小）`m_pageClosable`（Notebook.hpp:44，Notebook.cpp:223/234
+  维护）全仓只写不读——closable 行为实际由"绑定时才知道的按钮闭包"承载，向量
+  是死状态。要么删掉（m_pageButtons 单列即可），要么在下个需要查询 closable 的
+  使用点前别留悬念。随顺手 commit 处理即可。
+- [OK] 通用：三个销毁路径（关 tab / bridge 关插件 / 退出 app）+ recreate 路径的
+  session↔map 一致性走查全部通过（见 C/D）；两 commit 零 try-catch、零新 stub；
+  `git show --stat` 各自聚焦（1.4 五文件 GUI_App/MainFrame/SSWCP/图标；1.5 七文件
+  Notebook/PluginTabPage/riders，无夹带）；plugin.list 的 running 来自
+  host->loaded_ids()，与 tab map 同源一致；工作区 clean，1.6（c7838d2e83）已
+  commit 但仅动 web 资源，与本轮无涉，下轮专审；E1/E2（mac 框架债）未被触碰，
+  维持登记；遗留登记项 (2) reload_page 调用方仍未接线（本就约定 1.6+，见 1.6
+  review）。
+- 备注（不要求改）：(a) PluginTabPage 的 notify_page_state 走 else 分支
+  （page 无 bridge）→ page_state_notify_webview(oracle 句柄) 无订阅者 → no-op，
+  即插件 tab 当前收不到 page.state 事件——1.6 的 active 刷新只覆盖 center 页，
+  插件页如需感知 active/idle 再议（session bridge emit 即可）；(b) tab↔map 的
+  shared_ptr 所有权依赖"MainFrame 销毁前必经 shutdown 清空 map"这一不变量
+  （两条路径已验证成立），若将来出现第三条不经过 shutdown 的销毁路径会双删
+  ——现状接受，引入新路径时记得带上。
+
+### Verdict: NEEDS CHANGES（仅 1 条 MUST FIX：新引入的 static 悬垂指针；
+### review 5/6 全部设计输入与 riders 验收通过，1.4/1.5 主体合格）
+### Next: 单独一个 `[plugin-demo] fix review-7 must-fix` commit：s_prev_web_page
+### 改 MainFrame 成员（保留 per-frame 语义，recreate 天然安全）。两条 SHOULD FIX
+### （PluginCenter 特判走 select_tab(wxPanel*)、m_pageClosable 去留）可随该
+### commit 或 1.6 rider 顺手带上，不阻塞。修完后按序推进：1.6（c7838d2e83 已
+### commit，下轮专审：契约核对、双击/失败路径 UX、26 键中英表、dark_mode 三路径）
+### 与 1.7 冒烟（MSVC 构建无新警告 + review 5/6 冒烟清单 + 本轮新增验证：开着
+### 插件中心 tab 切语言 → 无崩溃、插件 tab 全关、新 frame 插件中心正常重载；
+### 右键/中键关 tab + 中心页 Close 按钮两条关闭链各走一遍；remove 后 permissions.json
+### 中该 id 条目清空、重装重开重新弹权限）。
