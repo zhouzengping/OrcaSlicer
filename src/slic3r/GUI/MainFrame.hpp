@@ -13,6 +13,7 @@
 
 #include <string>
 #include <map>
+#include <memory>
 #include <unordered_map>
 
 #include "GUI_Utils.hpp"
@@ -402,7 +403,10 @@ public:
     WebViewPanel*         m_webview { nullptr };
     PrinterWebView*       m_printer_view{nullptr};
     PluginCenterPage*     m_plugin_center{ nullptr };
-    std::unordered_map<std::string, PluginTabPage*> m_plugin_tabs;
+    // Owning handles: PluginManager::open_plugin hands the tab's shared_ptr
+    // to the frame and never keeps it, so the map must hold it for the tab's
+    // whole lifetime (releasing the last reference destroys the wx window).
+    std::unordered_map<std::string, std::shared_ptr<PluginTabPage>> m_plugin_tabs;
     wxLogWindow*          m_log_window { nullptr };
     // BBS
     //wxBookCtrlBase*       m_tabpanel { nullptr };

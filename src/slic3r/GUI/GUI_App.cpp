@@ -1332,18 +1332,23 @@ void GUI_App::shutdown(bool isRecreate)
     }
 
 
+    // Plugin teardown runs on BOTH shutdown paths: during recreate_GUI the old
+    // frame is Destroy()ed right after this function returns, so a plugin tab
+    // still open would die with its window while its session stays loaded in
+    // the recreate-surviving PluginManager, leaving the host map pointing at
+    // a dead webview. Closing the tabs here unloads every session while the
+    // tab HWNDs are still alive (MainFrame::close_plugin_tab ordering).
+    if (m_plugin_manager && mainframe != nullptr)
+        mainframe->close_all_plugin_tabs();
+
     if (m_is_recreating_gui) return;
     m_is_closing = true;
 
-    // Plugin teardown safety net: with the 1.4 plugin tab system in place the
-    // full order will be close_all_plugin_tabs() here (mainframe still alive,
-    // run once per real close) and then release the manager, whose PluginHost
-    // destructor reclaims any leftover sessions. Until then this is the net.
-    if (m_plugin_manager) {
-        if (mainframe != nullptr)
-            mainframe->close_all_plugin_tabs();
+    // Real close only: recreate keeps the manager (and its PluginHost /
+    // permission store) alive for the new frame; the plugin center page of
+    // the new MainFrame re-registers the center APIs on it.
+    if (m_plugin_manager)
         m_plugin_manager.reset();
-    }
 
     BOOST_LOG_TRIVIAL(info) << "GUI_App::shutdown exit";
 }

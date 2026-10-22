@@ -42,6 +42,9 @@
 #include "Plater.hpp"
 #include "WebViewDialog.hpp"
 #include "WebViewDevDialog.hpp"
+#include "PluginCenterPage.hpp"
+#include "PluginManager.hpp"
+#include "PluginTabPage.hpp"
 #include "../Utils/Process.hpp"
 #include "format.hpp"
 // BBS
@@ -1225,6 +1228,26 @@ void MainFrame::init_tabpanel() {
             }
         }
 
+        // Generic page-state notifications for webview-based tabs that opt in
+        // through wants_generic_page_state() (plugin center and plugin tabs).
+        // The flutter pages keep the tpHome / tpMonitor branches above.
+        static WebViewPageBase* s_prev_web_page = nullptr;
+        if (WebViewPageBase* web_page = dynamic_cast<WebViewPageBase*>(panel)) {
+            if (web_page->wants_generic_page_state()) {
+                if (s_prev_web_page && s_prev_web_page != web_page)
+                    s_prev_web_page->notify_page_state("inactive");
+                web_page->notify_page_state("active");
+                s_prev_web_page = web_page;
+            } else if (s_prev_web_page) {
+                // Switched to a webview page that manages its own state.
+                s_prev_web_page->notify_page_state("inactive");
+                s_prev_web_page = nullptr;
+            }
+        } else if (s_prev_web_page) {
+            s_prev_web_page->notify_page_state("inactive");
+            s_prev_web_page = nullptr;
+        }
+
         if (panel)
             panel->SetFocus();
 
@@ -1294,6 +1317,12 @@ void MainFrame::init_tabpanel() {
     m_calibration = new CalibrationPanel(m_tabpanel, wxID_ANY, wxDefaultPosition, wxDefaultSize);
     m_calibration->SetBackgroundColour(*wxWHITE);
     m_tabpanel->AddPage(m_calibration, _L("Calibration"), std::string("tab_calibration_active"), std::string("tab_calibration_active"), false);
+
+    // Fixed plugin center tab; webview-based pages paint themselves, so no
+    // background colour is forced here. Dynamic plugin tabs are appended
+    // after it by open_plugin_tab().
+    m_plugin_center = new PluginCenterPage(m_tabpanel);
+    m_tabpanel->AddPage(m_plugin_center, _L("Plugins"), std::string("tab_plugin_active"), std::string("tab_plugin_active"), false);
 
     if (m_plater) {
         // load initial config
@@ -3633,20 +3662,88 @@ void MainFrame::select_tab(wxPanel* panel)
     select_tab(size_t(page_idx));
 }
 
-// Dynamic plugin tabs. Filled in by the tab integration phase; the stubs
-// keep the frozen interface linkable.
+// Dynamic plugin tabs. All notebook addressing goes through FindPage; the
+// TabPosition constants never match the live page order here because fixed
+// tabs (multi-device) and plugin tabs shift indices at runtime.
 bool MainFrame::open_plugin_tab(const std::string& plugin_id)
 {
-    return false;
+    if (plugin_id.empty() || !m_tabpanel)
+        return false;
+
+    const auto existing = m_plugin_tabs.find(plugin_id);
+    if (existing != m_plugin_tabs.end()) {
+        const int idx = m_tabpanel->FindPage(existing->second.get());
+        if (idx != wxNOT_FOUND) {
+            m_tabpanel->SetSelection(size_t(idx));
+            return true;
+        }
+        // Stale entry: the page is gone from the notebook; dropping it
+        // destroys the window, then the create path below runs.
+        m_plugin_tabs.erase(existing);
+    }
+
+    // The manager parents the tab to the notebook and hands the owning
+    // shared_ptr to us; it never keeps the tab itself.
+    std::shared_ptr<PluginTabPage> tab = wxGetApp().plugin_manager()->open_plugin(plugin_id, m_tabpanel);
+    if (!tab)
+        return false;
+
+    // PluginManager exposes no manifest query yet, so the plugin id doubles
+    // as the tab caption. bSelect selects without any index arithmetic;
+    // closable is honoured by the notebook from phase 1.5 on.
+    if (!m_tabpanel->AddPage(tab.get(), wxString::FromUTF8(plugin_id.c_str()),
+            std::string("tab_plugin_active"), std::string("tab_plugin_active"), true, true)) {
+        // Nothing references the tab: reclaim the session before the
+        // shared_ptr destroys the window.
+        wxGetApp().plugin_manager()->close_plugin(plugin_id);
+        return false;
+    }
+
+    m_plugin_tabs[plugin_id] = std::move(tab);
+    return true;
 }
 
 bool MainFrame::close_plugin_tab(const std::string& plugin_id)
 {
-    return false;
+    if (!m_tabpanel)
+        return false;
+
+    const auto it = m_plugin_tabs.find(plugin_id);
+    if (it == m_plugin_tabs.end())
+        return false;
+
+    // Detach from the notebook first: the removal fires PAGE_CHANGED while
+    // the page is still alive, so the generic page-state branch above never
+    // touches a destroyed window.
+    PluginTabPage* page = it->second.get();
+    const int      idx  = m_tabpanel->FindPage(page);
+    if (idx != wxNOT_FOUND)
+        m_tabpanel->RemovePage(idx);
+
+    // Unload the session while the tab window is still alive: the session
+    // webview is parented to the tab's native handle (PluginManager::
+    // close_plugin). The chain is one-way - unload never calls back into
+    // close_plugin_tab - so the bridge-initiated plugin.close / plugin.remove
+    // path cannot re-enter here.
+    wxGetApp().plugin_manager()->close_plugin(plugin_id);
+
+    // Drop the owning reference: the page destructor releases the session
+    // reference (already unloaded) and destroys the window.
+    m_plugin_tabs.erase(it);
+    return true;
 }
 
 void MainFrame::close_all_plugin_tabs()
 {
+    // close_plugin_tab erases entries as it goes; iterate over a copy of
+    // the keys.
+    std::vector<std::string> ids;
+    ids.reserve(m_plugin_tabs.size());
+    for (const auto& item : m_plugin_tabs)
+        ids.push_back(item.first);
+
+    for (const std::string& id : ids)
+        close_plugin_tab(id);
 }
 
 //BBS
