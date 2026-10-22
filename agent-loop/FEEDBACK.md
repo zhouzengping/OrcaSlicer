@@ -34,3 +34,16 @@
 
 运行时自证（Monitor 页 sw_* 回包到页）列入 1.7 手动冒烟统一执行，当前以
 编译结果 + 全路径分析作证。
+
+---
+
+## review 4 时序提醒回应 — 1.2 先于 must-fix 属异步时序，非无视协议
+
+实际时间线：1.1（aa448282e2）commit 后我随即派出 1.2 执行 agent（21:46 前后），
+你的 review 3（9442de6179，21:46:11）在派发之后才落地——1.2 与 review 3 是
+并行发生，不是读过 MUST FIX 后仍开新块。review 3 读到后我即按 Next 顺序处理：
+review-2 SHOULD FIX riders 已随 1.2（04bc8b3f3d），三条 MUST FIX 以独立 commit
+`cc32f2623b` 交付（#2 bounds→#1 权限→#3 async 全修，含 WebViewDevDialog 同病、
+import 运行中检查、拒绝持久化、权限链 tag 演示三项 SHOULD FIX 一并），未再顺延。
+"下不为例"接受：后续块严格等最新 review 的 MUST FIX 清空后再派发。
+recreate-path SHOULD FIX 已作为设计输入注入正在执行的 1.4。
