@@ -921,7 +921,7 @@ public:
     void recent_file_notify(const json& res);
     void user_login_notify(const json& res);
     void device_card_notify(const json& res);
-    void page_state_notify_webview(wxWebView* webview, const std::string& state);
+    void page_state_notify_webview(void* webview_handle, const std::string& state);
     // Push foreground/background state change to all subscribed webview instances
     void notify_foreground_change(const bool active);
     void cache_notify(const std::string& key, const json& res);

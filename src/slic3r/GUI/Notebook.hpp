@@ -13,6 +13,10 @@ class Button;
 // custom message the ButtonsListCtrl sends to its parent (Notebook) to notify a selection change:
 wxDECLARE_EVENT(wxCUSTOMEVT_NOTEBOOK_SEL_CHANGED, wxCommandEvent);
 
+// custom message the ButtonsListCtrl sends to its parent (Notebook) to request
+// closing a closable page (right / middle click on the tab button):
+wxDECLARE_EVENT(wxCUSTOMEVT_NOTEBOOK_PAGE_CLOSE, wxCommandEvent);
+
 class ButtonsListCtrl : public wxControl
 {
 public:
@@ -24,7 +28,7 @@ public:
     void SetSelection(int sel);
     void UpdateMode();
     void Rescale();
-    bool InsertPage(size_t n, const wxString &text, bool bSelect = false, const std::string &bmp_name = "", const std::string &inactive_bmp_name = "");
+    bool InsertPage(size_t n, const wxString &text, bool bSelect = false, const std::string &bmp_name = "", const std::string &inactive_bmp_name = "", bool closable = false);
     void RemovePage(size_t n);
     bool SetPageImage(size_t n, const std::string& bmp_name) const;
     void SetPageText(size_t n, const wxString& strText);
@@ -139,10 +143,11 @@ public:
                  const wxString& text,
                  const std::string& bmp_name,
                  const std::string& inactive_bmp_name,
-                 bool bSelect = false)
+                 bool bSelect = false,
+                 bool closable = false)
     {
         DoInvalidateBestSize();
-        return InsertPage(GetPageCount(), page, text, bmp_name, inactive_bmp_name, bSelect);
+        return InsertPage(GetPageCount(), page, text, bmp_name, inactive_bmp_name, bSelect, closable);
     }
 
     // Page management
@@ -168,12 +173,13 @@ public:
                     const wxString & text,
                     const std::string& bmp_name = "",
                     const std::string& inactive_bmp_name = "",
-                    bool bSelect = false)
+                    bool bSelect = false,
+                    bool closable = false)
     {
         if (!wxBookCtrlBase::InsertPage(n, page, text, bSelect))
             return false;
 
-        GetBtnsListCtrl()->InsertPage(n, text, bSelect, bmp_name, inactive_bmp_name);
+        GetBtnsListCtrl()->InsertPage(n, text, bSelect, bmp_name, inactive_bmp_name, closable);
 
         if (bSelect)
             SetSelection(n);

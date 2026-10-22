@@ -13,6 +13,7 @@
 
 #include <string>
 #include <map>
+#include <unordered_map>
 
 #include "GUI_Utils.hpp"
 #include "Event.hpp"
@@ -50,6 +51,8 @@ class PrintHostQueueDialog;
 class Plater;
 class MainFrame;
 class ParamsDialog;
+class PluginCenterPage;
+class PluginTabPage;
 
 enum QuickSlice
 {
@@ -218,6 +221,7 @@ public:
         tpCalibration   = 6,
         tpAuxiliary     = 7,
         toDebugTool     = 8,
+        tpPluginCenter  = 9,
     };
 
     //BBS: add slice&&print status update logic
@@ -328,6 +332,12 @@ public:
     void        select_tab(wxPanel* panel);
     void        select_tab(size_t tab = size_t(-1));
     void        request_select_tab(TabPosition pos);
+
+    // Dynamic plugin tabs. open_plugin_tab is idempotent (already open ->
+    // select). Addressing always goes through FindPage, never raw indices.
+    bool        open_plugin_tab(const std::string& plugin_id);
+    bool        close_plugin_tab(const std::string& plugin_id);
+    void        close_all_plugin_tabs();
     int         get_calibration_curr_tab();
     void        select_view(const std::string& direction);
         /**
@@ -384,7 +394,6 @@ public:
     Plater*               m_plater { nullptr };
     //BBS: GUI refactor
     MonitorPanel*         m_monitor{ nullptr };
-
     //AuxiliaryPanel*       m_auxiliary{ nullptr };
     MultiMachinePage*     m_multi_machine{ nullptr };
     ProjectPanel*         m_project{ nullptr };
@@ -392,6 +401,8 @@ public:
     CalibrationPanel*     m_calibration{ nullptr };
     WebViewPanel*         m_webview { nullptr };
     PrinterWebView*       m_printer_view{nullptr};
+    PluginCenterPage*     m_plugin_center{ nullptr };
+    std::unordered_map<std::string, PluginTabPage*> m_plugin_tabs;
     wxLogWindow*          m_log_window { nullptr };
     // BBS
     //wxBookCtrlBase*       m_tabpanel { nullptr };

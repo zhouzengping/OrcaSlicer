@@ -586,6 +586,14 @@ set(SLIC3R_GUI_SOURCES
     GUI/WebPreprintDialog.cpp
     GUI/WebUrlDialog.cpp
     GUI/WebUrlDialog.hpp
+    GUI/WebViewPageBase.cpp
+    GUI/WebViewPageBase.hpp
+    GUI/PluginCenterPage.cpp
+    GUI/PluginCenterPage.hpp
+    GUI/PluginTabPage.cpp
+    GUI/PluginTabPage.hpp
+    GUI/PluginManager.cpp
+    GUI/PluginManager.hpp
     pchheader.cpp
     pchheader.hpp
     Utils/ASCIIFolding.cpp

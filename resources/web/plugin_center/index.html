@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>插件中心</title>
+<script>
+    // Runs before first paint: honour the dark_mode URL parameter so the very
+    // first frame already matches the host theme. When the parameter is absent
+    // the prefers-color-scheme media query in app.css decides.
+    (function () {
+        'use strict';
+        var m = /[?&]dark_mode=(\d)/.exec(window.location.search);
+        if (m) {
+            document.documentElement.setAttribute('data-theme', m[1] === '1' ? 'dark' : 'light');
+        }
+    })();
+</script>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+    <div class="page">
+        <header class="page-header">
+            <div class="header-text">
+                <h1 id="page-title">插件中心</h1>
+                <p id="page-subtitle" class="subtitle">管理本地导入的网页插件。</p>
+            </div>
+            <div class="header-actions">
+                <button id="btn-import-zip" class="btn btn-primary" type="button"></button>
+                <button id="btn-import-dir" class="btn btn-secondary" type="button"></button>
+            </div>
+        </header>
+
+        <main id="main" class="main">
+            <div class="state">
+                <div class="spinner"></div>
+                <p class="state-title">加载中…</p>
+            </div>
+        </main>
+
+        <footer id="page-footer" class="page-footer"></footer>
+    </div>
+
+    <div id="toast-root" aria-live="polite"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>

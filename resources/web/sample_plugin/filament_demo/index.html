@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>当前项目耗材</title>
+<style>
+    /*
+     * Sample plugin styles. The host loads this page without a dark_mode
+     * parameter, so only the system preference decides the theme.
+     */
+    :root {
+        color-scheme: light dark;
+        --bg: #f5f6f8;
+        --card-bg: #ffffff;
+        --text: #1f2328;
+        --muted: #59636e;
+        --border: #d8dee4;
+        --accent: #0969da;
+    }
+    @media (prefers-color-scheme: dark) {
+        :root {
+            --bg: #15181d;
+            --card-bg: #1e2228;
+            --text: #e6e8eb;
+            --muted: #9aa4b2;
+            --border: #333a42;
+            --accent: #4493f8;
+        }
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+        font-size: 14px;
+        line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
+    }
+
+    .page {
+        max-width: 640px;
+        margin: 0 auto;
+        padding: 24px 20px 32px;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 18px;
+    }
+
+    h1 {
+        font-size: 18px;
+        font-weight: 600;
+        margin: 0;
+    }
+
+    .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        padding: 7px 13px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: var(--card-bg);
+        color: var(--text);
+        font: inherit;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background-color 0.15s ease;
+    }
+
+    .btn:hover { background: var(--bg); }
+    .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+    .btn[disabled] { opacity: 0.5; pointer-events: none; }
+
+    /* Spinning refresh icon while a request is in flight. */
+    .btn.loading svg { animation: spin 0.8s linear infinite; }
+
+    .content { flex: 1; }
+
+    .list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 14px;
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+    }
+
+    .swatch {
+        width: 30px;
+        height: 30px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        flex-shrink: 0;
+    }
+
+    .row-text {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .row-name {
+        font-size: 14px;
+        font-weight: 600;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .row-sub {
+        color: var(--muted);
+        font-size: 12px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .row-index {
+        color: var(--muted);
+        font-size: 12px;
+        font-family: ui-monospace, SFMono-Regular, Consolas, "Courier New", monospace;
+        flex-shrink: 0;
+    }
+
+    .state {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        padding: 64px 24px;
+        color: var(--muted);
+    }
+
+    .spinner {
+        width: 26px;
+        height: 26px;
+        border-radius: 50%;
+        border: 3px solid var(--border);
+        border-top-color: var(--accent);
+        animation: spin 0.8s linear infinite;
+        margin-bottom: 12px;
+    }
+
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+</style>
+</head>
+<body>
+    <div class="page">
+        <header class="head">
+            <h1>当前项目耗材</h1>
+            <button id="btn-refresh" class="btn" type="button">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                <span>刷新</span>
+            </button>
+        </header>
+
+        <main id="content" class="content">
+            <div class="state">
+                <div class="spinner"></div>
+                <div>加载中…</div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+    (function () {
+        'use strict';
+
+        // Sample plugin for the Orca plugin center: lists the filaments of
+        // the current project via orca.filament.list and refreshes every time
+        // the tab becomes active again (page.state event). Runs offline; the
+        // Orca SDK is injected by the native host, not bundled here.
+
+        const contentEl = document.getElementById('content');
+        const refreshBtn = document.getElementById('btn-refresh');
+        let refreshing = false;
+
+        function el(tag, cls, text) {
+            const node = document.createElement(tag);
+            if (cls) {
+                node.className = cls;
+            }
+            if (text !== undefined && text !== null) {
+                node.textContent = text;
+            }
+            return node;
+        }
+
+        function setContent(node) {
+            while (contentEl.firstChild) {
+                contentEl.removeChild(contentEl.firstChild);
+            }
+            contentEl.appendChild(node);
+        }
+
+        function showLoading() {
+            const wrap = el('div', 'state');
+            wrap.appendChild(el('div', 'spinner'));
+            wrap.appendChild(el('div', null, '加载中…'));
+            setContent(wrap);
+        }
+
+        function showEmpty() {
+            setContent(el('div', 'state', '当前项目没有耗材'));
+        }
+
+        function showNotConnected() {
+            setContent(el('div', 'state', '未连接宿主'));
+        }
+
+        function showError(message) {
+            setContent(el('div', 'state', message));
+        }
+
+        // Solid color for single-color filaments; horizontal hard-stop bands
+        // (one per entry of colors) for multi-color filaments.
+        function swatchBackground(f) {
+            const colors = Array.isArray(f.colors)
+                ? f.colors.filter((c) => typeof c === 'string' && c)
+                : [];
+            if (colors.length > 1) {
+                const parts = [];
+                for (let i = 0; i < colors.length; i += 1) {
+                    const from = ((i / colors.length) * 100).toFixed(2) + '%';
+                    const to = (((i + 1) / colors.length) * 100).toFixed(2) + '%';
+                    parts.push(colors[i] + ' ' + from + ', ' + colors[i] + ' ' + to);
+                }
+                return 'linear-gradient(to right, ' + parts.join(', ') + ')';
+            }
+            return f.color || '#9aa4b2';
+        }
+
+        function buildRow(f, position) {
+            const row = el('div', 'row');
+
+            const swatch = el('span', 'swatch');
+            swatch.style.background = swatchBackground(f);
+            row.appendChild(swatch);
+
+            const text = el('div', 'row-text');
+            const name = f.name || f.preset_name || ('耗材 #' + (position + 1));
+            text.appendChild(el('div', 'row-name', name));
+            const sub = [f.type, f.vendor].filter((s) => typeof s === 'string' && s).join(' · ');
+            if (sub) {
+                text.appendChild(el('div', 'row-sub', sub));
+            }
+            row.appendChild(text);
+
+            const index = (typeof f.index === 'number') ? f.index : position + 1;
+            row.appendChild(el('span', 'row-index', '#' + index));
+            return row;
+        }
+
+        function render(filaments) {
+            const list = el('div', 'list');
+            filaments.forEach((f, i) => list.appendChild(buildRow(f, i)));
+            setContent(list);
+        }
+
+        async function refresh() {
+            if (!window.orca) {
+                showNotConnected();
+                return;
+            }
+            if (refreshing) {
+                return;
+            }
+            refreshing = true;
+            refreshBtn.disabled = true;
+            refreshBtn.classList.add('loading');
+            try {
+                const res = await window.orca.call('orca.filament.list', {});
+                const filaments = (res && Array.isArray(res.filaments)) ? res.filaments : [];
+                if (filaments.length === 0) {
+                    showEmpty();
+                } else {
+                    render(filaments);
+                }
+            } catch (err) {
+                showError((err && err.message) ? err.message : String(err));
+            } finally {
+                refreshing = false;
+                refreshBtn.disabled = false;
+                refreshBtn.classList.remove('loading');
+            }
+        }
+
+        refreshBtn.addEventListener('click', refresh);
+
+        // Reload automatically each time this plugin tab becomes active.
+        if (window.orca) {
+            window.orca.on('page.state', (e) => {
+                if (e && e.state === 'active') {
+                    refresh();
+                }
+            });
+        }
+
+        refresh();
+    })();
+    </script>
+</body>
+</html>

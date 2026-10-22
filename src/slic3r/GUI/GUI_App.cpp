@@ -7553,15 +7553,15 @@ void GUI_App::device_card_notify(const json& res)
     }
 }
 
-void GUI_App::page_state_notify_webview(wxWebView* webview, const std::string& state)
+void GUI_App::page_state_notify_webview(void* webview_handle, const std::string& state)
 {
-    if (!webview) return;
+    if (!webview_handle) return;
 
     json notification_data;
     notification_data["state"] = state;
 
     for (const auto& instance : m_page_state_subscribers) {
-        if (instance.first == webview) {
+        if (instance.first == webview_handle) {
             auto ptr = instance.second.lock();
             if (ptr) {
                 ptr->m_res_data = notification_data;

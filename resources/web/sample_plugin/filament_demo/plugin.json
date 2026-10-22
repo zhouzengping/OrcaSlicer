@@ -1,0 +1,8 @@
+{
+    "orca_manifest": 1,
+    "id": "com.orca.sample.filaments",
+    "name": "Filament List Demo",
+    "version": "0.1.0",
+    "entry": "index.html",
+    "permissions": []
+}

@@ -5,6 +5,7 @@
 #include <iostream>
 #include <mutex>
 #include <stack>
+#include <functional>
 #include <wx/socket.h>
 
 #include <wx/webview.h>
@@ -44,6 +45,14 @@ using tcp = asio::ip::tcp;
 #define NOTIFY_UPLOAD_TIMELASPE "sw_NotifyUploadTimelaspe"
 
 namespace Slic3r { namespace GUI {
+
+/*
+ * Opaque webview identity for the SSWCP channel. A handle is any stable,
+ * unique-per-view pointer; only equality / map-key semantics are ever used.
+ * Today it is either a legacy wxWebView* or the orca::wv::WebView* of a
+ * WebViewPageBase host.
+ */
+using WebViewHandle = void*;
 
 class WCP_Logger
 {
@@ -105,7 +114,7 @@ public:
 
 public:
     // Constructor initializes instance with command and parameters
-    SSWCP_Instance(std::string cmd, const json& header, const json& data, std::string event_id, wxWebView* webview)
+    SSWCP_Instance(std::string cmd, const json& header, const json& data, std::string event_id, WebViewHandle webview)
         : m_cmd(cmd), m_header(header), m_webview(webview), m_event_id(event_id), m_param_data(data)
     {}
 
@@ -138,8 +147,8 @@ public:
     virtual bool is_Instance_illegal();
 
     // Get associated webview
-    wxWebView* get_web_view() const;
-    void       set_web_view(wxWebView* view);
+    WebViewHandle get_web_view() const;
+    void          set_web_view(WebViewHandle view);
 
 public:
     // Handle timeout event
@@ -214,7 +223,7 @@ protected:
 public:
     std::string m_cmd;           // Command to execute
     json        m_header;        // Request header
-    wxWebView*  m_webview;       // Associated webview
+    WebViewHandle m_webview;     // Associated webview (opaque identity, see WebViewHandle)
     std::string m_event_id;      // Event identifier
     json        m_param_data;    // Command parameters
 
@@ -236,7 +245,7 @@ private:
 class SSWCP_MachineConnect_Instance : public SSWCP_Instance
 {
 public:
-    SSWCP_MachineConnect_Instance(std::string cmd, const json& header, const json& data, std::string event_id, wxWebView* webview)
+    SSWCP_MachineConnect_Instance(std::string cmd, const json& header, const json& data, std::string event_id, WebViewHandle webview)
         : SSWCP_Instance(cmd, header, data, event_id, webview)
     {
         m_type = MACHINE_CONNECT;
@@ -278,7 +287,7 @@ class WebPresetDialog;
 class SSWCP_MqttAgent_Instance : public SSWCP_Instance
 {
 public:
-    SSWCP_MqttAgent_Instance(std::string cmd, const json& header, const json& data, std::string event_id, wxWebView* webview)
+    SSWCP_MqttAgent_Instance(std::string cmd, const json& header, const json& data, std::string event_id, WebViewHandle webview)
         : SSWCP_Instance(cmd, header, data, event_id, webview)
     {
         m_type = MQTT_AGENT;
@@ -293,11 +302,11 @@ public:
     void process() override;
 
 public:
-    static std::unordered_map<wxWebView*, std::pair<std::string, std::shared_ptr<MqttClient>>> m_mqtt_engine_map; // (id, client)
+    static std::unordered_map<WebViewHandle, std::pair<std::string, std::shared_ptr<MqttClient>>> m_mqtt_engine_map; // (id, client)
     static std::mutex                                          m_engine_map_mtx;
 
-    static std::map<std::pair<std::string, wxWebView*>, std::string> m_subscribe_map;          // ((event_id, webview), topic)
-    static std::map<std::pair<std::string, wxWebView*>, std::weak_ptr<SSWCP_Instance>> m_subscribe_instance_map; // ((event_id, webview), instance)
+    static std::map<std::pair<std::string, WebViewHandle>, std::string> m_subscribe_map;          // ((event_id, webview), topic)
+    static std::map<std::pair<std::string, WebViewHandle>, std::weak_ptr<SSWCP_Instance>> m_subscribe_instance_map; // ((event_id, webview), instance)
 
     static WebPresetDialog* m_dialog;
 
@@ -305,7 +314,7 @@ public:
     // sw_* call is a fresh instance object, so (like m_mqtt_engine_map) this id
     // lives in static state keyed by the webview: assigned in sw_create_mqtt_client,
     // read by connect/subscribe/set_engine/disconnect, cleared on disconnect.
-    static std::unordered_map<wxWebView*, std::string> m_connect_session_map;
+    static std::unordered_map<WebViewHandle, std::string> m_connect_session_map;
 
 public:
     bool validate_id(const std::string& id);
@@ -369,7 +378,7 @@ private:
 class SSWCP_MachineFind_Instance : public SSWCP_Instance
 {
 public:
-    SSWCP_MachineFind_Instance(std::string cmd, const json& header, const json& data, std::string event_id, wxWebView* webview)
+    SSWCP_MachineFind_Instance(std::string cmd, const json& header, const json& data, std::string event_id, WebViewHandle webview)
         : SSWCP_Instance(cmd, header, data, event_id, webview)
     {
         m_type = MACHINE_FIND;
@@ -408,7 +417,7 @@ private:
 class SSWCP_MachineOption_Instance : public SSWCP_Instance
 {
 public:
-    SSWCP_MachineOption_Instance(std::string cmd, const json& header, const json& data, std::string event_id, wxWebView* webview)
+    SSWCP_MachineOption_Instance(std::string cmd, const json& header, const json& data, std::string event_id, WebViewHandle webview)
         : SSWCP_Instance(cmd, header, data, event_id, webview)
     {
         m_type = MACHINE_OPTION;
@@ -518,7 +527,7 @@ private:
 class SSWCP_MachineManage_Instance : public SSWCP_Instance
 {
 public:
-    SSWCP_MachineManage_Instance(std::string cmd, const json& header, const json& data, std::string event_id, wxWebView* webview)
+    SSWCP_MachineManage_Instance(std::string cmd, const json& header, const json& data, std::string event_id, WebViewHandle webview)
         : SSWCP_Instance(cmd, header, data, event_id, webview)
     {
         m_type = MACHINE_MANAGE;
@@ -549,7 +558,7 @@ class SSWCP_PageStateChange_Instance : public SSWCP_Instance
 {
 public:
     SSWCP_PageStateChange_Instance(std::string cmd, const json& header, const json& data,
-                                    std::string event_id, wxWebView* webview)
+                                    std::string event_id, WebViewHandle webview)
         : SSWCP_Instance(cmd, header, data, event_id, webview)
     {
         m_type = COMMON;
@@ -568,7 +577,7 @@ private:
 class SSWCP_UserLogin_Instance : public SSWCP_Instance
 {
 public:
-    SSWCP_UserLogin_Instance(std::string cmd, const json& header, const json& data, std::string event_id, wxWebView* webview)
+    SSWCP_UserLogin_Instance(std::string cmd, const json& header, const json& data, std::string event_id, WebViewHandle webview)
         : SSWCP_Instance(cmd, header, data, event_id, webview)
     {
         m_type = USER_LOGIN;
@@ -620,7 +629,7 @@ public:
         std::string event_id;
         std::string sn;
         std::string type;     // "timelapse"
-        wxWebView*  webview;  // not owned — captured so we can push events after the caller instance is gone
+        WebViewHandle webview;  // not owned — captured so we can push events after the caller instance is gone
     };
     static std::unordered_map<std::string, std::shared_ptr<SubscribeInfo>> m_subscribe_map;  // event_id -> info
 
@@ -639,7 +648,7 @@ public:
 class SSWCP_SliceProject_Instance : public SSWCP_Instance
 {
 public:
-    SSWCP_SliceProject_Instance(std::string cmd, const json& header, const json& data, std::string event_id, wxWebView* webview)
+    SSWCP_SliceProject_Instance(std::string cmd, const json& header, const json& data, std::string event_id, WebViewHandle webview)
         : SSWCP_Instance(cmd, header, data, event_id, webview)
     {
         m_type = SLICE_PROJECT;
@@ -671,14 +680,14 @@ class SSWCP
 {
 public:
     // Handle incoming web messages
-    static void handle_web_message(std::string message, wxWebView* webview);
+    static void handle_web_message(std::string message, WebViewHandle webview);
 
     // Handle incoming web messages for Flutter debug (no webview required)
     static void handle_webmsg_for_debug(std::string message);
 
     // Create new SSWCP instance
     static std::shared_ptr<SSWCP_Instance> create_sswcp_instance(
-        std::string cmd, const json& header, const json& data, std::string event_id, wxWebView* webview);
+        std::string cmd, const json& header, const json& data, std::string event_id, WebViewHandle webview);
 
     // Delete instance
     static void delete_target(SSWCP_Instance* target);
@@ -695,7 +704,17 @@ public:
     static void stop_subscribe_machine();
 
     // Handle webview deletion
-    static void on_webview_delete(wxWebView* webview);
+    static void on_webview_delete(WebViewHandle webview);
+
+    /*
+     * Downlink sink registry. Host pages register one sink per view; sinks
+     * marshal to the UI thread and self-check view liveness. Thread-safe:
+     * register / unregister / dispatch may be called from any thread.
+     * Returns false from dispatch when no sink is registered for the handle.
+     */
+    static void register_web_sink(WebViewHandle handle, std::function<void(const std::string& script)> sink);
+    static void unregister_web_sink(WebViewHandle handle);
+    static bool dispatch_to_sink(WebViewHandle handle, const std::string& script);
 
     // query the info of the machine
     static bool query_machine_info(std::shared_ptr<PrintHost>& host, MachineInfo& out, int timeout_second = 5);
@@ -730,7 +749,7 @@ public:
     static void disable_debug_mode();
     static bool is_debug_mode_enabled();
     static void send_message_to_flutter(const std::string& message);
-    static void send_message_auto(const std::string& message, wxWebView* webview = nullptr);
+    static void send_message_auto(const std::string& message, WebViewHandle webview = nullptr);
 
 private:
     static std::unordered_set<std::string> m_machine_find_cmd_list;     // Machine find commands

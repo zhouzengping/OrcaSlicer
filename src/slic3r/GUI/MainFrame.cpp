@@ -3633,6 +3633,22 @@ void MainFrame::select_tab(wxPanel* panel)
     select_tab(size_t(page_idx));
 }
 
+// Dynamic plugin tabs. Filled in by the tab integration phase; the stubs
+// keep the frozen interface linkable.
+bool MainFrame::open_plugin_tab(const std::string& plugin_id)
+{
+    return false;
+}
+
+bool MainFrame::close_plugin_tab(const std::string& plugin_id)
+{
+    return false;
+}
+
+void MainFrame::close_all_plugin_tabs()
+{
+}
+
 //BBS
 void MainFrame::jump_to_monitor(std::string dev_id)
 {

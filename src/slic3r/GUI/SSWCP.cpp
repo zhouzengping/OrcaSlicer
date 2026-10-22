@@ -1018,11 +1018,11 @@ bool SSWCP_Instance::is_Instance_illegal() {
 }
 
 // Get associated webview
-wxWebView* SSWCP_Instance::get_web_view() const {
+WebViewHandle SSWCP_Instance::get_web_view() const {
     return m_webview;
 }
 
-void SSWCP_Instance::set_web_view(wxWebView* view) {
+void SSWCP_Instance::set_web_view(WebViewHandle view) {
     m_webview = view;
 }
 
@@ -1056,9 +1056,7 @@ void SSWCP_Instance::send_to_js()
                 return;
 
             // Original communication path: send via WebView postMessage
-            if (self->m_webview && self->m_webview->GetRefData()) {
-                WebView::RunScript(self->m_webview, str_res);
-            }
+            SSWCP::dispatch_to_sink(self->m_webview, str_res);
 
             // Flutter debug: copy message to Flutter debug interface via WebSocket
             // This is independent of the original communication path above
@@ -5971,7 +5969,7 @@ void SSWCP_UserLogin_Instance::push_timelapse_state(const std::string& sn,
         wxGetApp().CallAfter([event_id, script, json_str]() {
             auto it = m_subscribe_map.find(event_id);
             if (it != m_subscribe_map.end() && it->second && it->second->webview) {
-                WebView::RunScript(it->second->webview, script);
+                SSWCP::dispatch_to_sink(it->second->webview, script);
             }
             SSWCP::send_message_to_flutter(json_str);
         });
@@ -6012,23 +6010,9 @@ void SSWCP_UserLogin_Instance::sw_SubscribeDownloadState()
 
     m_subscribe_map[m_event_id] = sub;
 
-    // When the webview is destroyed (e.g. user switches machines during download),
-    // clean up all subscriptions that reference it so push_timelapse_state won't
-    // post CallAfter lambdas with dangling webview pointers.
-    if (m_webview) {
-        m_webview->Bind(wxEVT_DESTROY, [webview = m_webview](wxWindowDestroyEvent& e) {
-            if (e.GetEventObject() != webview) { e.Skip(); return; }
-            for (auto it = m_subscribe_map.begin(); it != m_subscribe_map.end();) {
-                auto& sub = it->second;
-                if (sub && sub->webview == webview) {
-                    it = m_subscribe_map.erase(it);
-                } else {
-                    ++it;
-                }
-            }
-            e.Skip();
-        });
-    }
+    // When the owning page goes away, subscriptions are cleaned up by
+    // SSWCP::on_webview_delete (invoked by the page host on teardown), which
+    // erases every entry referencing this webview.
 
     m_res_data = json::object();
     m_status   = 200;
@@ -6717,12 +6701,12 @@ std::string make_connect_session_id()
 }
 } // namespace
 
-std::unordered_map<wxWebView*, std::pair<std::string, std::shared_ptr<MqttClient>>> SSWCP_MqttAgent_Instance::m_mqtt_engine_map;
+std::unordered_map<WebViewHandle, std::pair<std::string, std::shared_ptr<MqttClient>>> SSWCP_MqttAgent_Instance::m_mqtt_engine_map;
 std::mutex                                          SSWCP_MqttAgent_Instance::m_engine_map_mtx;
-std::map<std::pair<std::string, wxWebView*>, std::string>   SSWCP_MqttAgent_Instance::m_subscribe_map;
-std::map<std::pair<std::string, wxWebView*>, std::weak_ptr<SSWCP_Instance>> SSWCP_MqttAgent_Instance::m_subscribe_instance_map;
+std::map<std::pair<std::string, WebViewHandle>, std::string>   SSWCP_MqttAgent_Instance::m_subscribe_map;
+std::map<std::pair<std::string, WebViewHandle>, std::weak_ptr<SSWCP_Instance>> SSWCP_MqttAgent_Instance::m_subscribe_instance_map;
 WebPresetDialog*                                                                    SSWCP_MqttAgent_Instance::m_dialog = nullptr;
-std::unordered_map<wxWebView*, std::string>                                          SSWCP_MqttAgent_Instance::m_connect_session_map;
+std::unordered_map<WebViewHandle, std::string>                                          SSWCP_MqttAgent_Instance::m_connect_session_map;
 
 void SSWCP_MqttAgent_Instance::process()
 {
@@ -7879,7 +7863,7 @@ std::unordered_set<std::string> SSWCP::m_mqtt_agent_cmd_list = {
     "sw_create_mqtt_client", "sw_mqtt_connect", "sw_mqtt_disconnect", "sw_mqtt_subscribe", "sw_mqtt_unpublish", "sw_mqtt_publish", "sw_mqtt_set_engine"
 };
 
-std::shared_ptr<SSWCP_Instance> SSWCP::create_sswcp_instance(std::string cmd, const json& header, const json& data, std::string event_id, wxWebView* webview)
+std::shared_ptr<SSWCP_Instance> SSWCP::create_sswcp_instance(std::string cmd, const json& header, const json& data, std::string event_id, WebViewHandle webview)
 {
     std::shared_ptr<SSWCP_Instance> instance;
 
@@ -7908,7 +7892,7 @@ std::shared_ptr<SSWCP_Instance> SSWCP::create_sswcp_instance(std::string cmd, co
 }
 
 // Handle incoming web messages
-void SSWCP::handle_web_message(std::string message, wxWebView* webview) {
+void SSWCP::handle_web_message(std::string message, WebViewHandle webview) {
     try {        
 
         if (!webview) {
@@ -8056,7 +8040,7 @@ void SSWCP::stop_machine_find() {
 }
 
 // Handle webview deletion
-void SSWCP::on_webview_delete(wxWebView* view)
+void SSWCP::on_webview_delete(WebViewHandle view)
 {
     // Mark all instances associated with this webview as invalid
     std::vector<SSWCP_Instance*> instances_to_invalidate;
@@ -8152,6 +8136,46 @@ void SSWCP::on_webview_delete(wxWebView* view)
             ++iter;
         }
     }
+}
+
+namespace
+{
+std::mutex s_web_sink_mutex;
+std::unordered_map<void*, std::function<void(const std::string&)>> s_web_sinks;
+} // namespace
+
+void SSWCP::register_web_sink(WebViewHandle handle, std::function<void(const std::string& script)> sink)
+{
+    if (handle == nullptr)
+        return;
+
+    std::lock_guard<std::mutex> lock(s_web_sink_mutex);
+    s_web_sinks[handle] = std::move(sink);
+}
+
+void SSWCP::unregister_web_sink(WebViewHandle handle)
+{
+    std::lock_guard<std::mutex> lock(s_web_sink_mutex);
+    s_web_sinks.erase(handle);
+}
+
+bool SSWCP::dispatch_to_sink(WebViewHandle handle, const std::string& script)
+{
+    if (handle == nullptr)
+        return false;
+
+    std::function<void(const std::string&)> sink;
+    {
+        std::lock_guard<std::mutex> lock(s_web_sink_mutex);
+        auto it = s_web_sinks.find(handle);
+        if (it == s_web_sinks.end())
+            return false;
+        sink = it->second;
+    }
+
+    // The sink marshals to the UI thread and self-checks view liveness.
+    sink(script);
+    return true;
 }
 
 std::string SSWCP::get_display_filename()
@@ -8370,13 +8394,14 @@ void SSWCP::send_message_to_flutter(const std::string& message)
     }
 }
 
-void SSWCP::send_message_auto(const std::string& message, wxWebView* webview)
+void SSWCP::send_message_auto(const std::string& message, WebViewHandle webview)
 {
     // Original production path: send via WebView postMessage (unchanged, not affected by debug logic)
-    if (webview && webview->GetRefData()) {
+    bool sent_to_view = false;
+    if (webview) {
         BOOST_LOG_TRIVIAL(debug) << "Sending message to Flutter via WebView postMessage";
         std::string js_code = "window.postMessage(JSON.stringify(" + message + "), '*');";
-        WebView::RunScript(webview, js_code);
+        sent_to_view = SSWCP::dispatch_to_sink(webview, js_code);
     }
 
     // Debug path: copy the message to Flutter debug interface via WebSocket (independent of original path)
@@ -8389,7 +8414,7 @@ void SSWCP::send_message_auto(const std::string& message, wxWebView* webview)
     }
 
     // Warning if no channel is available
-    if ((!webview || !webview->GetRefData()) &&
+    if (!sent_to_view &&
         (!m_debug_mode_enabled || !m_debug_server || !m_debug_server->has_client())) {
         BOOST_LOG_TRIVIAL(warning) << "Cannot send message: no WebSocket client and no WebView available";
     }

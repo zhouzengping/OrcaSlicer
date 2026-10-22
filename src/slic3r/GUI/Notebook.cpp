@@ -13,6 +13,7 @@
 #include <wx/sizer.h>
 
 wxDEFINE_EVENT(wxCUSTOMEVT_NOTEBOOK_SEL_CHANGED, wxCommandEvent);
+wxDEFINE_EVENT(wxCUSTOMEVT_NOTEBOOK_PAGE_CLOSE, wxCommandEvent);
 
 ButtonsListCtrl::ButtonsListCtrl(wxWindow *parent, wxBoxSizer* side_tools) :
     wxControl(parent, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE | wxTAB_TRAVERSAL)
@@ -170,7 +171,7 @@ void ButtonsListCtrl::SetSelection(int sel)
     Refresh();
 }
 
-bool ButtonsListCtrl::InsertPage(size_t n, const wxString &text, bool bSelect /* = false*/, const std::string &bmp_name /* = ""*/, const std::string &inactive_bmp_name)
+bool ButtonsListCtrl::InsertPage(size_t n, const wxString &text, bool bSelect /* = false*/, const std::string &bmp_name /* = ""*/, const std::string &inactive_bmp_name /* = ""*/, bool /*closable*/)
 {
     Button * btn = new Button(this, text.empty() ? text : " " + text, bmp_name, wxNO_BORDER);
     btn->SetCornerRadius(0);
