@@ -716,6 +716,16 @@ public:
     static void unregister_web_sink(WebViewHandle handle);
     static bool dispatch_to_sink(WebViewHandle handle, const std::string& script);
 
+    /*
+     * Convenience sink registration for legacy wxWebView pages: keeps
+     * SSWCP downlink (send_to_js / send_message_auto / push_timelapse_state)
+     * working for hosts that have not migrated to the orca webview stack yet.
+     * Safe to call on views that never join SSWCP - the entry only fires when
+     * a SSWCP instance carries this exact view pointer.
+     */
+    static void register_wx_sink(wxWebView* view);
+    static void unregister_wx_sink(wxWebView* view);
+
     // query the info of the machine
     static bool query_machine_info(std::shared_ptr<PrintHost>& host, MachineInfo& out, int timeout_second = 5);
 

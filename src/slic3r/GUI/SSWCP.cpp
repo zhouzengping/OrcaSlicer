@@ -31,6 +31,7 @@
 #include <boost/asio/ip/host_name.hpp>
 #include <wx/stdpaths.h>
 #include <wx/msgdlg.h>
+#include <wx/weakref.h>
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>
@@ -8136,6 +8137,10 @@ void SSWCP::on_webview_delete(WebViewHandle view)
             ++iter;
         }
     }
+
+    // Sink teardown backstop: hosts unregister explicitly, but erase here so a
+    // missed path cannot leave a dangling sink behind. Erase is idempotent.
+    unregister_web_sink(view);
 }
 
 namespace
@@ -8176,6 +8181,33 @@ bool SSWCP::dispatch_to_sink(WebViewHandle handle, const std::string& script)
     // The sink marshals to the UI thread and self-checks view liveness.
     sink(script);
     return true;
+}
+
+void SSWCP::register_wx_sink(wxWebView* view)
+{
+    if (view == nullptr)
+        return;
+
+    register_web_sink(view, [view](const std::string& script)
+    {
+        // SSWCP downlink may fire from worker threads; marshal to the UI
+        // thread. wxWeakRef clears itself when the window is destroyed, so
+        // a queued script after page teardown is dropped safely.
+        wxTheApp->CallAfter([weak = wxWeakRef<wxWebView>(view), script]()
+        {
+            wxWebView* target = weak.get();
+            if (target == nullptr)
+                return;
+            target->RunScript(wxString::FromUTF8(script.c_str()));
+        });
+    });
+}
+
+void SSWCP::unregister_wx_sink(wxWebView* view)
+{
+    if (view == nullptr)
+        return;
+    unregister_web_sink(view);
 }
 
 std::string SSWCP::get_display_filename()

@@ -1,5 +1,6 @@
 #include "WebView.hpp"
 #include "slic3r/GUI/GUI_App.hpp"
+#include "slic3r/GUI/SSWCP.hpp"
 #include "slic3r/Utils/MacDarkMode.hpp"
 
 #include <algorithm>
@@ -463,6 +464,10 @@ wxWebView* WebView::CreateWebView(wxWindow * parent, wxString const & url)
     webView->SetRefData(new WebViewRef(webView));
     g_webviews.push_back(webView);
     webView->EnableAccessToDevTools();
+    // Single choke point covering every legacy wxWebView host: wire the view
+    // into the SSWCP downlink sink registry so send_to_js / send_message_auto /
+    // push_timelapse_state keep reaching pages on this stack.
+    Slic3r::GUI::SSWCP::register_wx_sink(webView);
     return webView;
 }
 #if wxUSE_WEBVIEW_EDGE
