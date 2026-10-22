@@ -88,3 +88,128 @@ DIRECTIVES 1.1 PluginManager 实装。1.1 完成时注意：`user_local_data_dir
 1.7 冒烟时务必在 device/monitor 页（PrinterWebView，即 SSWCP 宿主页）验证 sw_*
 回包经新 sink 到达页面（日志或断点），顺带确认 Monitor 页 StatusPanel 摄像头视图
 不受影响。
+
+---
+
+## Round 1 / review 3 — aa448282e2 "1.1 implement PluginManager core"
+
+对照 DIRECTIVES 1.1 逐项核对 + 三库 API 对接验证（plugin_host.cpp / permission_store.cpp /
+bridge.cpp / backend_win.cpp 均已读）。9 个 API 全部注册且名字与 PluginManager.hpp 冻结
+契约一致，数据真实、无 try-catch、无 TODO stub；但有 3 个 MUST FIX，其中两个会直接
+破坏 1.7 目标闭环（权限授予无效 / 插件 tab 白屏）。
+
+- [MUST FIX] **权限授予对会话策略不可见（权限流整体失效）**
+  `PluginManager::prompt_plugin_permissions`（PluginManager.cpp:587-589）自建
+  `PermissionStore store(m_permission_store_path)`，load→grant→save 只落盘；
+  而 session 策略捕获的是 PluginHost 构造时 load 过一次、之后从不重读的**内存表**
+  （plugin_host.cpp:195 只在 ctor 调 store.load()；policy lambda 持 store 拷贝，
+  共享的是 host 那份 Impl，见 permission_store.cpp:73-77 每个 store 实例独立 Impl）。
+  结果：用户在 wxMessageDialog 点了 Allow → 文件里是 granted → 会话内该 tag 仍
+  Unknown → policy Deny（plugin_host.cpp:318-333）。DIRECTIVES 1.1 明确要求的
+  "允许则写入 PermissionStore" 流程在运行时是空转，重启应用才生效。
+  WebViewDevDialog::prompt_plugin_permissions（WebViewDevDialog.cpp:243 起，存量
+  未实测路径）是同一颗雷。
+  修法（二选一，(a) 更小）：(a) 给 PluginHost 加
+  `orca::plugin::PermissionStore& permission_store() const`（plugin_host.hpp 暴露
+  impl.store），PluginManager 与 DevDialog 都改为通过 host 的同一实例做
+  query/grant/save——grant 直接进策略共享的内存表，save 负责持久化；
+  (b) PluginHost::load 每次开头重读 `impl.store.load()`。
+
+- [MUST FIX] **adopt 的会话 webview 永远拿不到初始 bounds（插件 tab 白屏直到手动 resize）**
+  Windows 后端 controller 创建完成时 `put_Bounds(RECT{0,0,0,0})` 后立刻
+  report_created（backend_win.cpp:426-427）；adopted 路径的 on_created 槽被
+  PluginHost::load 独占且只做 navigate（plugin_host.cpp:371-379），不调 bounds；
+  `adopt_session → adopt_view → apply_bounds()` 执行时 view 还在 Creating →
+  直接 return（WebViewPageBase.cpp:219-221）；tab 挂进 notebook 触发的 wxEVT_SIZE
+  也几乎必然早于异步 controller Ready，同样 no-op。之后无人再补 bounds →
+  插件内容 0×0 不可见，"open → 动态 tab 出现" 目标闭环在视觉上直接失败。
+  修法：`PluginTabPage::adopt_session`（PluginTabPage.cpp:19）adopt_view 之前包一层
+  现有槽：`auto prev = m_view 为空时先取 session->webview()->events().on_created;
+  webview->events().on_created = [weak_this, prev]{ apply_bounds(); if (prev) prev(); }`
+  ——controller 完成回调在 UI 线程排队，当前同步替换必先生效，安全。
+  （WebViewDevDialog 的 plugin session 路径同病：apply_view_bounds 只管 m_view，
+  顺手一并修。）
+
+- [MUST FIX] **5 个 API 违反冻结契约的 sync/async 约定，全部注册成了 sync**
+  PluginManager.hpp:26-34 承诺 import/remove/open/close/install_sample 为 async，
+  实现里全是 `.sync`（PluginManager.cpp:390/406/429/446/463）；commit message 自称
+  "per the frozen wire contract"。这不是口味问题：sync handler 在 webview 消息回调内
+  内联执行（bridge.cpp:451-459 "Sync handlers run inline on the UI thread"），于是
+  import/install_sample 的 64MB 级 IO 冻结 UI；plugin.open 在别人家的
+  WebMessageReceived 回调里跑模态对话框（嵌套 pump）+ 创建窗口 + 创建 WebView2
+  controller；plugin.close/remove 在回调内销毁另一个 webview 的 controller 和 tab
+  窗口——正是 async+Responder 设计要避开的重入面。
+  修法：五个 API 改 `desc.async = [this](params, responder)`，函数体首行
+  `wxTheApp->CallAfter([...]{ ... responder.send_result/send_error ... })` 把工作
+  挪出消息回调（Responder 自带 cfg.dispatcher 回 UI 线程，attach_bridge 已配好）。
+  JS 侧 wire 格式不变，无前端影响。
+
+- [SHOULD FIX] **review 2 的 SHOULD FIX 未按约定并入本 commit**：三处修改
+  （~WebViewRef 补 unregister_wx_sink、SSWCP.cpp:8141 注释改写、FEEDBACK.md 更正
+  "Monitor 页不含 webview" 表述）内容核对无误，但目前只躺在工作区未提交
+  （git status: WebView.cpp / SSWCP.cpp / FEEDBACK.md 三个未提交修改）。
+  本 commit 没带上就作罢，但必须随下一个 commit（1.2）落地，不得再顺延或丢失。
+
+- [SHOULD FIX] **import 覆盖安装不检查运行中实例**：import_plugin_from 对已存在的
+  `dest` 直接 remove_all + rename（PluginManager.cpp:698-706）。若同 id 插件正在
+  运行，Windows 下 WebView2 虚拟主机仍握着插件目录文件 → remove_all 半途失败，
+  留下半删除残骸。建议与 plugin.remove 对齐：`is_running(id)` 时先
+  `close_plugin_tab` 再删（或至少在 error 里写明需先关闭）。
+
+- [SHOULD FIX] **拒绝路径不"干净失败"且不记忆拒绝**：用户在权限对话框点 No 后
+  插件照常打开，只是其 tagged API 运行时被 Deny（页面只能看到 PermissionDenied）；
+  且 deny 不落盘（store 只在 grant 后 save），下次 open 对同一 tag 再弹一遍。
+  建议：任一 tag 被拒即返回 nullptr 干净失败（或至少把 denied 状态
+  `store.revoke` 持久化），并考虑向页面明示拒绝原因。
+
+- [SHOULD FIX] **权限链演示不出来**：两个 host 级 API（orca.filament.list /
+  orca.host.info）ApiDesc.permission 均为空（origin-only，任何插件免授权可读项目
+  耗数据），且 sample_plugin/filament_demo/plugin.json `permissions: []`——
+  整个 prompt/PermissionStore 机制在 demo 里零触发。建议给
+  `orca.filament.list` 配 `permission = "filament.read"`（或类似 tag）并让 sample
+  manifest 声明之，1.7 冒烟才能真正走到权限弹窗→授权→API 通的链路。
+
+- [OK] 构造函数：m_plugins_root=`<user_local_data>/plugins` + 目录创建，同时确保
+  permission store 父目录存在（PluginManager.cpp:283-298），双重 ec 检查。
+- [OK] `user_local_data_dir()` 提共享为 `Slic3r::GUI::webview_user_data_dir()`
+  （WebViewPageBase.hpp:19 声明）：函数体逐字节未动，create_view 默认值、
+  WebViewDevDialog、PluginManager::ensure_host 三处消费同一函数，与
+  wv::WebView::Config::browser_data_dir 文档钉死的
+  `wxStandardPaths::GetUserLocalDataDir().ToUTF8()` 一致——"字节一致"约束由
+  单一来源保证。WebViewDevDialog 去重干净。
+- [OK] ensure_host() HostEnv 四项全对（host_version=SLIC3R_VERSION、
+  dispatcher=wxTheApp->CallAfter、browser_data_dir=共享目录、
+  permission_store_path），并在 host 上注册两个 host 级 API（会克隆进每个
+  session bridge，plugin_host.cpp:336-345）。
+- [OK] orca.host.info 数据真实：版本宏/平台宏/locale 取
+  current_language_code_safe() 并 `zh_CN`→`zh-CN` 归一化为 BCP 47；orca.filament.list
+  来自 preset_bundle 真实项目数据（filament_presets 槽位、filament_colour /
+  multi_colors / colour_mode、preset label/type/vendor/filament_id，全部核对存在，
+  含无 preset 槽位的回退），非空壳。
+- [OK] import zip 加固到位：两遍校验（条目数 512 / 单条 16MB / 总量 64MB 上限、
+  zip-slip 拦截前导 `/`、`\\`、`..`、`:`）、内存解压绕开 miniz 窄字符路径、
+  scratch 置于 plugins_root 下保证 rename 同卷、所有失败路径清 scratch、
+  dest 目录名来自 schema 校验过的 id（`^[a-z0-9][a-z0-9.-]{2,63}$`，无路径分隔符）。
+- [OK] plugin.list：坏目录跳过并记日志不崩；结果按 id 稳定排序；running 状态来自
+  host->loaded_ids()。installed_ids() 按 DIRECTIVES 字面（存在性扫描）实现，
+  ec 全防护、无 plugin.json 子目录跳过、不挂不崩。
+- [OK] plugin.pick_import 为 sync 原生文件对话框（契约如此）：dir/zip 双分支、
+  取消返回 `{"path":""}` 干净。
+- [OK] 错误路径全 Status/返回值，全文件零 try-catch、零 TODO；register_api_checked
+  把注册失败记日志而非吞掉；风格与 WebViewPageBase.cpp 一致（匿名 ns 助手、
+  BOOST_LOG_TRIVIAL、boost::fs + error_code）。
+- [OK] open_plugin 失败回收正确：adopt_session 失败（实际不可达）时 host->unload
+  收回 session；MainFrame 三个 stub 签名与 handler 调用吻合（1.4 实装后自动接通）。
+
+### Verdict: NEEDS CHANGES
+### Next: 先修三个 MUST FIX（建议顺序：2 bounds 白屏 → 1 权限不可见 → 3 sync/async，
+前两个是 1.7 闭环的硬阻断；三个都是小 diff，其中 1 需要 plugin_host.hpp 加一个
+访问器，属预期内的三库小改）。修完一个小 commit，然后继续 DIRECTIVES 1.2 GUI_App
+挂载。1.2/1.3 验证点：(a) PluginCenterPage 的 register_center_apis 必须挂在
+GUI_App 持有的那个 PluginManager 实例上（plugin.list 的 running 状态和
+open/close 才与 MainFrame 一致）；(b) 退出路径 close_all_plugin_tabs 必须在
+tab 窗口销毁**之前**触发 host unload（close_plugin 注释已写明依赖存活的 HWND）；
+(c) 工作区那三份未提交的 review-2 SHOULD FIX 修改随 1.2 commit 一并落地。
+1.7 冒烟时按 review 2 的 Next 验证 PrinterWebView sw_* 回包，并新增验证：
+权限弹窗出现 → Allow → tagged API 调用成功（验 MUST FIX 1）；插件 tab 打开即
+可见内容、无需 resize（验 MUST FIX 2）。
