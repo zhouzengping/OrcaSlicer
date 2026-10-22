@@ -213,3 +213,83 @@ tab 窗口销毁**之前**触发 host unload（close_plugin 注释已写明依�
 1.7 冒烟时按 review 2 的 Next 验证 PrinterWebView sw_* 回包，并新增验证：
 权限弹窗出现 → Allow → tagged API 调用成功（验 MUST FIX 1）；插件 tab 打开即
 可见内容、无需 resize（验 MUST FIX 2）。
+
+---
+
+## Round 1 / review 4 — 04bc8b3f3d "1.2 mount PluginManager on GUI_App"
+
+本 commit 两部分：1.2 本体（GUI_App 挂载）+ 兑现 review-2 SHOULD FIX 三件套。
+逐项核对完毕（GUI_App.cpp/hpp、WebView.cpp、SSWCP.cpp、FEEDBACK.md diff 全读，
+MainFrame 三函数、PluginManager.cpp、PluginTabPage.cpp 现状核实）。
+
+**A. review-2 SHOULD FIX 兑现验证 — 三项全部落地：**
+
+- [OK] **~WebViewRef 补 unregister_wx_sink**（Widgets/WebView.cpp:347-349）：
+  位于 g_webviews 集中摘除点，`SSWCP::unregister_wx_sink` 判空 + 幂等 map erase
+  （SSWCP.cpp:8207-8212），对从未注册 sink 的视图调用也无害；SSWCP.hpp:727 有
+  声明，WebView.cpp 已 include SSWCP.hpp。stale sink 条目不再依赖宿主自觉。
+- [OK] **SSWCP.cpp:8141-8143 注释修正**：新表述（orca 栈宿主显式 unregister、
+  legacy 全走 ~WebViewRef、此处是兜底、幂等）与代码事实一致。
+- [OK] **FEEDBACK.md Monitor 表述更正**：更正内容与 review 2 指出的事实一致
+  （MonitorPanel 内嵌 StatusPanel 的摄像头视图，StatusPanel.cpp:1056），并如实
+  注明"其 sink 条目由 ~WebViewRef 统一摘除"。
+
+**B. 1.2 本体质量（DIRECTIVES 1.2）：**
+
+- [OK] **挂载方式**：GUI_App.hpp 前向声明 + `std::unique_ptr<PluginManager>
+  m_plugin_manager{nullptr}` + 懒创建访问器 `plugin_manager()`（GUI_App.hpp:308/
+  804，GUI_App.cpp:1287-1291），与 GUI_App 现有私有单例成员风格一致
+  （m_printhost_job_queue / other_instance_message_handler 同族；~GUI_App 声明于
+  hpp、定义于 cpp，unique_ptr 不完整类型无问题）。懒创建使 PluginManager 构造
+  （仅 boost::fs 建目录，review 3 已核）不发生在 GUI_App 构造期——无过早调用
+  wx 设施。小 nit：commit message 称 lazy "same pattern as m_printhost_job_queue"，
+  实际后者是 mainframe init 时 eager reset(new)——措辞不精确，无代码影响。
+- [OK] **退出顺序正确**：GUI_App::shutdown 唯一调用点是 MainFrame::shutdown 尾部
+  （MainFrame.cpp:1084），teardown 块位于 `m_is_recreating_gui` 早退之后
+  （GUI_App.cpp:1337-1346）：先 `mainframe->close_all_plugin_tabs()`（此刻
+  MainFrame 尚未销毁、仅隐藏，满足 review-3 Next(b) "host unload 先于 tab 窗口
+  销毁"）再 `m_plugin_manager.reset()`；manager 与 mainframe 双判空；shutdown
+  只跑一次。close_all_plugin_tabs 目前是 no-op stub（MainFrame.cpp:3648，1.4
+  范围），commit 注释如实说明 PluginHost dtor 是当前兜底——可接受的中间态。
+- [SHOULD FIX] **recreate 路径完全跳过插件 teardown**：语言切换等
+  recreate_GUI 场景下 `m_is_recreating_gui` 早退使 teardown 块不执行，而
+  manager 跨 recreate 存活。1.4 落地后 `old_main_frame->Destroy()` 会带着仍
+  loaded 的 session 销毁插件 tab（GUI_App.cpp:3969），tab↔session 映射丢失、
+  session 指向已关闭视图。1.4 时需定夺：把 teardown 移到早退之前（两条路径各
+  跑一次）或显式关-重建插件 tab。当前无插件 tab，不阻塞。
+- [OK] 通用质量：本 diff 零 try-catch、零新 stub、注释风格一致、构建自证
+  （GUI_App.obj + libslic3r_gui.lib + Snapmaker_Orca.dll 全绿）。
+
+**C. review 3 三个 MUST FIX 状态盘点 —— 全部未动（HEAD + 工作区双重核实）：**
+
+- [MUST FIX] **（review 3 #1，未修，逐字原样）权限授予对会话策略不可见**：
+  `PluginManager::prompt_plugin_permissions` 仍自建
+  `orca::plugin::PermissionStore store(m_permission_store_path)`（PluginManager.cpp:
+  587-589），grant 只落盘不进策略共享的内存表；plugin_host.hpp 未加
+  permission_store() 访问器；WebViewDevDialog.cpp:243 同病未动。
+- [MUST FIX] **（review 3 #2，未修，逐字原样）adopt 的会话 webview 拿不到初始
+  bounds**：PluginTabPage 构造与 adopt_session 仍只 `adopt_view(...)` 无
+  on_created 补 apply_bounds（PluginTabPage.cpp:12-31）；backend_win.cpp /
+  WebViewPageBase.cpp 未改。
+- [MUST FIX] **（review 3 #3，未修，逐字原样）5 个 API 仍全部 sync**：
+  plugin.import / plugin.remove / plugin.open / plugin.close / plugin.install_sample
+  依旧 `.sync`（PluginManager.cpp:390/406/429/446/463），未见 desc.async +
+  Responder。
+- 工作区 clean（git status 无未提交改动），`git diff aa448282e2..04bc8b3f3d --
+  src/` 仅 GUI_App/SSWCP/WebView 三处 → 三条 MUST FIX **完全未动、也无人正在修**。
+  **时序提醒**：review 3（9442de6179，21:46:11 NEEDS CHANGES）早于本 commit
+  （21:54:06），即 EXECUTOR 在 MUST FIX 未处理的情况下开了新块 1.2——协议第 5 条
+  （开新块前先读 REVIEW.md 最新节、MUST FIX 优先于 DIRECTIVES 新任务）与
+  review 3 Next 的显式顺序（"修完一个小 commit，然后继续 1.2"）这次没有被执行。
+  本 commit 顺带兑现了 review-3 SHOULD FIX #1（riders 落地），这是对的；但
+  MUST FIX 优先级高于 riders，下不为例。
+
+### Verdict: APPROVED（仅就本 commit 自身内容：1.2 挂载正确、三件 rider 全兑现；
+### review 3 的 NEEDS CHANGES 对 aa448282e2 继续有效，不因本 commit 消除）
+### Next: **暂停 1.3。** 下一个 commit 必须是单独的
+`[plugin-demo] fix review-3 must-fixes`，修完上面 C 节三条（建议顺序：#2 bounds
+白屏 → #1 权限不可见 → #3 sync/async；#1 按 review 3 建议 (a) 给 plugin_host.hpp
+加 `permission_store()` 访问器，PluginManager 与 WebViewDevDialog 同步改；#2 顺手
+修 WebViewDevDialog 的 plugin session 路径；#3 五个 API 改 desc.async + 函数体首行
+CallAfter 挪出消息回调）。修完该 commit 后才继续 DIRECTIVES 1.3，不得再把 MUST FIX
+顺延到后续块。B 节的 recreate-path SHOULD FIX 记入 1.4 的设计输入。
