@@ -293,3 +293,112 @@ MainFrame 三函数、PluginManager.cpp、PluginTabPage.cpp 现状核实）。
 修 WebViewDevDialog 的 plugin session 路径；#3 五个 API 改 desc.async + 函数体首行
 CallAfter 挪出消息回调）。修完该 commit 后才继续 DIRECTIVES 1.3，不得再把 MUST FIX
 顺延到后续块。B 节的 recreate-path SHOULD FIX 记入 1.4 的设计输入。
+
+---
+
+## Round 1 / review 5 — cc32f2623b "fix review-3 must-fix: visible grants, adopted bounds, async contract"
+
+专项验收轮（review 4 下令、暂停 1.3 的那个修复 commit）。逐条对照 review 3 原始
+定义验收，三库联动路径全部实读核实（plugin_host.cpp / permission_store.cpp /
+webview.cpp report_created / backend_win.cpp 完成回调 / bridge.cpp Responder 与
+权限链）。**三条 MUST FIX 全部验收通过。**
+
+- [OK] **MUST FIX 1（权限授予可见性）验收通过**。修法为 review 3 建议 (a)：
+  plugin_host.hpp:89 / plugin_host.cpp:198 新增 `permission_store()` 返回
+  `m_impl->store`；PluginManager::prompt_plugin_permissions（PluginManager.cpp:
+  654-699，经 ensure_host 取 host 实例）与 WebViewDevDialog::prompt_plugin_
+  permissions（WebViewDevDialog.cpp:267 起）都改为走 host 的同一实例。
+  写后读同源成立：session policy 捕获的 `store_copy = impl.store`
+  （plugin_host.cpp:321）虽是 PermissionStore 值拷贝，但 PermissionStore 持
+  `shared_ptr<Impl>`（permission_store.hpp:81），拷贝共享同一张 grant 表 →
+  grant/revoke 经访问器直达策略查询的内存表，save() 持久化、host ctor 的 load
+  负责重启回读；ensure_host 懒单例保证 prompt 与 load 用同一个 host。
+  附带验收（review 3 SHOULD FIX "deny 仍 open" 一并修掉）：No → store.revoke
+  持久化 Denied + open_plugin 返回 nullptr 干净失败（PluginManager.cpp:578-583），
+  下次 open 对已拒 tag 不再弹窗直接拒——不再"带着被拒权限打开插件"。
+
+- [OK] **MUST FIX 2（adopted bounds）验收通过**。PluginTabPage::adopt_session
+  （PluginTabPage.cpp:33-46）在 adopt_view 前同步包一层 on_created：
+  weak_from_this 守卫（类新增 enable_shared_from_this，头注释钉死 shared_ptr
+  所有权约定）→ apply_bounds() → prev_created()，navigate 语义保留且排在
+  bounds 之后（首帧即有正确尺寸）。时序可靠：webview.cpp:62-67 report_created
+  先置 State::Ready 再调 on_created，wrap 里的 apply_bounds 不会撞 no-op 守卫；
+  controller 完成回调是 UI 线程排队事件，host->load 返回后的同步替换必先生效
+  （代码注释与此分析一致）；之后 wxEVT_SIZE → on_size → apply_bounds 持续接管。
+  apply_bounds 移 protected（WebViewPageBase.hpp:85）后全仓唯一外部消费者就是
+  本 wrap，无破坏。WebViewDevDialog 同病已修：apply_plugin_view_bounds
+  （WebViewDevDialog.cpp:211-226）+ on_load_plugin 同款 wrap（:343-348）+
+  on_size 双视图（:376-382）。DevDialog wrap 的 raw-this 捕获与该文件既有事件
+  槽（:102 on_created 等）风格一致，且 on_close 先 unload/close 视图再 Destroy、
+  backend 的 ControllerCompletedHandler 对 closed 状态直接丢弃回调
+  （backend_win.cpp:389-396），wrap 不会在对话框死后触发。
+
+- [OK] **MUST FIX 3（sync→async 契约）验收通过**。五个 API（plugin.import /
+  remove / open / close / install_sample，PluginManager.cpp:398-540）全部
+  desc.async + 函数体首行 wxTheApp->CallAfter，消息回调内只做入队。Responder
+  恰好一次：逐路径核对，五个 handler 的早退/失败/成功每个分支恰好一个 send_*，
+  且 bridge 侧有集中兜底——complete() 对已应答/已扫掉的 pending no-op
+  （bridge.cpp:59-61）、bridge 已死 no-op、超时 sweep 兜底，即使双发也不破坏
+  协议。错误码回传不变：InvalidParams/InternalError 仍走 error 帧，域失败仍走
+  ok:false payload，wire 语义与前端零改动。新竞态评估：连点/重入都经单一
+  CallAfter 队列在 UI 线程串行，无交错；import 覆盖运行中插件补了先 close 再删
+  的守卫（:785-798，与 plugin.remove 对齐，close 失败清 scratch 干净退出）；
+  当前 MainFrame 三 stub 下 open/remove 对运行态只能干净失败（stub 返回 false →
+  ok:false），1.4 接通后双击幂等由 open_plugin_tab 承担（DIRECTIVES 1.4 本就
+  要求"已开 → select"）。
+
+- [OK] **review 3 SHOULD FIX riders 全部落地且核对无误**：(1) import 运行中
+  守卫（上述）；(2) 拒绝持久化 + 干净失败（上述）；(3) 权限链演示——
+  orca.filament.list 双面拆分：center bridge 注册 origin-only 空标签
+  （PluginManager.cpp:534-535；空标签永不 consult policy，bridge.cpp:436-449），
+  host 面注册 "project.filaments.read"（:558-560，克隆进每个插件 session），
+  sample manifest 声明该 tag → 1.7 冒烟能走全 prompt→grant→Allow 链。
+
+- [OK] 通用：diff 零 try-catch、零新 stub（permission_store() 与
+  apply_plugin_view_bounds 均为实装）；`git show --stat` 改动聚焦——10 个文件
+  全部映射到三条 must-fix 与 review 3 SHOULD FIX riders，无夹带。
+
+- [OK] 时序违规说明接受：ab19dc9c60 FEEDBACK 的时间线（1.2 agent 派发早于
+  review 3 落地，非读过 MUST FIX 仍开新块）可信；cc32f2623b 按指令以独立
+  commit 交付且未再顺延；"后续块等 MUST FIX 清空后再派发"的承诺记录在案，
+  本条即清空信号。
+
+- [SHOULD FIX] **拒绝锁死无逃生门**：revoke 持久化 Denied 后，同一 id 插件
+  永远打不开（prompt 对 Denied 不再询问、直接拒），且 plugin.remove 只删目录
+  不清权限表（permissions.json 按 plugin id 键控，删除重装后依旧 Denied）——
+  冒烟时手滑点一次 No，就只能手改用户目录下的 permissions.json 才能恢复。
+  建议随 1.6（或下一个顺手 commit）：plugin.remove 成功后调
+  `host->permission_store().revoke_all(id)` + save()，用现有 UI 给用户留一条
+  逃生门；有余力再考虑中心页"重置权限"入口。
+
+- [SHOULD FIX]（小，1.4 顺手）PluginTabPage 带非空 session 的构造路径
+  （PluginTabPage.cpp:12-18）没有 wrap on_created——当前是死路径（open_plugin
+  走空构造 + adopt_session），但留着就是"tab 白屏"复发的引线。1.4 接线时让
+  构造路径委托 adopt_session（或删掉带 session 的构造重载），保证唯一的
+  session 绑定入口就是修过的那个。
+
+- 备注（不要求改）：(a) import/install_sample 的 CallAfter 体捕获 this
+  （PluginManager），退出路径 m_plugin_manager.reset() 之后若队列里还有未跑的
+  lambda 理论上悬垂——与全仓 CallAfter 惯用模式同险，且 Responder 对已死
+  bridge no-op，接受现状；(b) prompt 里 store.save() 返回值未检查（与旧代码
+  行为一致）。
+
+### Verdict: APPROVED — review 3 的三条 MUST FIX 全部验收通过，aa448282e2 的
+### NEEDS CHANGES 就此解除
+### Next: **解除 1.3 暂停**，恢复 DIRECTIVES 顺序。1.3 PluginCenterPage::setup_page：
+create_view + attach_bridge（SessionInfo.session_id="plugin-center"、origin 与
+自定义 scheme 匹配进 allowed_origins、scheme/URL 方案写注释说明理由）、
+register_center_apis 必须挂在 GUI_App 持有的 plugin_manager() 实例上（plugin.list
+的 running 状态与 open/close 才和 MainFrame 一致）；center bridge 的 BridgeConfig
+记得配 dispatcher（async Responder 靠它回 UI 线程，WebViewPageBase::attach_bridge
+有默认值但显式配置更稳）+ api_timeout_ms；reload_page 带 locale/dark_mode 查询
+参数重新导航。**1.4 需要吸收的设计输入（重申）**：(1) review 4 B 节 recreate-path
+——语言切换等 recreate_GUI 会带着仍 loaded 的 session 销毁插件 tab（GUI_App.cpp:3969
+old_main_frame->Destroy()），teardown（close_all_plugin_tabs → host unload，必须在
+tab 窗口销毁、HWND 尚活时执行）要么移到 m_is_recreating_gui 早退之前让两条路径各
+跑一次，要么显式关-重建插件 tab，tab↔session 映射不能丢；(2) open_plugin_tab
+幂等（已开 → select，FindPage 寻址禁止裸索引）同时兜住 async 化后的双击重入；
+(3) 上面第二条 SHOULD FIX：PluginTabPage session 绑定入口统一到 adopt_session。
+1.7 冒烟新增验证点（本轮修复的直接验收）：权限弹窗 → Allow → tagged
+orca.filament.list 调用成功；点 No → 插件不打开、再次 open 不再弹窗；插件 tab
+打开即有内容、无需 resize；DevDialog Load demo plugin 后插件视图立即可见。
