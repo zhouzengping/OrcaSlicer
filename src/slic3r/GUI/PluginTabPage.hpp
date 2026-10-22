@@ -14,9 +14,10 @@ namespace GUI {
  * Dynamic tab page hosting one running plugin. Created by MainFrame on
  * open_plugin_tab(), destroyed on close_plugin_tab(); the page adopts the
  * PluginSession assembled by PluginManager and releases it in its destructor
- * while the native HWND is still alive.
+ * while the native HWND is still alive. Always owned through shared_ptr
+ * (open_plugin returns one), so event slots can hold weak references.
  */
-class PluginTabPage : public WebViewPageBase
+class PluginTabPage : public WebViewPageBase, public std::enable_shared_from_this<PluginTabPage>
 {
 public:
     PluginTabPage(wxWindow* parent, std::shared_ptr<orca::plugin::PluginSession> session);

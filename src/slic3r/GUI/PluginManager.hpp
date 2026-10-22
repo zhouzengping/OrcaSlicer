@@ -57,9 +57,14 @@ public:
     std::vector<std::string> installed_ids() const;
 
 private:
-    // Modal wxYES_NO prompt for every manifest permission still Unknown in
-    // the persistent store; granted tags are written back before host load.
-    void prompt_plugin_permissions(const orca::plugin::PluginManifest& manifest, wxWindow* parent);
+    /*
+     * Modal wxYES_NO prompt for every manifest permission still Unknown in
+     * the persistent store, done through the host's store instance so grants
+     * are visible to the session policy. Returns false when any requested
+     * tag is refused (now or persisted earlier): the open must fail cleanly
+     * and refusals are recorded so they are not re-asked.
+     */
+    bool prompt_plugin_permissions(const orca::plugin::PluginManifest& manifest, wxWindow* parent);
 
     /*
      * Install a plugin from a picked path into <plugins_root>/<manifest id>/.

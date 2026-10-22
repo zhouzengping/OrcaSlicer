@@ -4,5 +4,7 @@
     "name": "Filament List Demo",
     "version": "0.1.0",
     "entry": "index.html",
-    "permissions": []
+    "permissions": [
+        "project.filaments.read"
+    ]
 }

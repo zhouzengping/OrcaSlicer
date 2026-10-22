@@ -208,6 +208,22 @@ void WebViewDevDialog::apply_view_bounds()
     m_view->set_bounds(0, 0, static_cast<int>(client.GetWidth() * scale), static_cast<int>(client.GetHeight() * scale));
 }
 
+void WebViewDevDialog::apply_plugin_view_bounds()
+{
+    if (!m_plugin_session)
+        return;
+
+    const std::shared_ptr<orca::wv::WebView> view = m_plugin_session->webview();
+    if (!view || view->state() != orca::wv::WebView::State::Ready)
+        return;
+
+    // Same panel and conversion as apply_view_bounds; the plugin view is
+    // shown in place of the dev view while the session is up.
+    const wxSize client = m_host_panel->GetClientSize();
+    const double scale  = m_host_panel->GetContentScaleFactor();
+    view->set_bounds(0, 0, static_cast<int>(client.GetWidth() * scale), static_cast<int>(client.GetHeight() * scale));
+}
+
 void WebViewDevDialog::ensure_plugin_host()
 {
     if (m_plugin_host)
@@ -242,9 +258,13 @@ void WebViewDevDialog::ensure_plugin_host()
 
 void WebViewDevDialog::prompt_plugin_permissions(const orca::plugin::PluginManifest& manifest)
 {
-    orca::plugin::PermissionStore store(m_plugin_store_path);
-    if (!store.load().ok())
+    if (!m_plugin_host)
         return;
+
+    // Must be the host's store instance: session policies read the grant
+    // table it owns, so grants/denials take effect in the live session and
+    // save() persists them. A separate store object would only touch disk.
+    orca::plugin::PermissionStore& store = m_plugin_host->permission_store();
 
     bool changed = false;
     for (const std::string& tag : manifest.permissions)
@@ -259,8 +279,14 @@ void WebViewDevDialog::prompt_plugin_permissions(const orca::plugin::PluginManif
         if (dlg.ShowModal() == wxID_YES)
         {
             store.grant(manifest.id, tag);
-            changed = true;
         }
+        else
+        {
+            // Revoke records an explicit denial so the next load does not
+            // re-ask; the plugin keeps running with the tag denied at runtime.
+            store.revoke(manifest.id, tag);
+        }
+        changed = true;
     }
     if (changed)
         store.save();
@@ -308,6 +334,20 @@ void WebViewDevDialog::on_load_plugin(wxCommandEvent& /*event*/)
         return;
     }
 
+    // Same initial-bounds gap as PluginTabPage::adopt_session: the session
+    // webview reaches Ready after this handler returns and its on_created
+    // slot (set by PluginHost) only navigates, while apply_view_bounds()
+    // manages the dev view only. Chain a bounds pass in front of it; the
+    // view is closed through the host on unload, before this dialog dies.
+    const std::shared_ptr<orca::wv::WebView> plugin_view = m_plugin_session->webview();
+    std::function<void()> prev_created                   = plugin_view->events().on_created;
+    plugin_view->events().on_created                     = [this, prev_created]()
+    {
+        apply_plugin_view_bounds();
+        if (prev_created)
+            prev_created();
+    };
+
     m_load_plugin_btn->Enable(false);
     m_unload_plugin_btn->Enable(true);
 }
@@ -336,6 +376,9 @@ void WebViewDevDialog::on_size(wxSizeEvent& event)
 {
     event.Skip();
     apply_view_bounds();
+    // The plugin session view shares the host panel and is invisible to
+    // apply_view_bounds(); no-op unless a session is loaded and Ready.
+    apply_plugin_view_bounds();
 }
 
 void WebViewDevDialog::on_timer(wxTimerEvent& /*event*/)

@@ -79,12 +79,20 @@ orca::jb::ApiDesc host_info_api()
     return desc;
 }
 
-// Filament slots of the current project (same source of truth as the design
-// filament list in Plater: slot name -> preset, colors from project_config).
-orca::jb::ApiDesc filament_list_api()
+/*
+ * Filament slots of the current project (same source of truth as the design
+ * filament list in Plater: slot name -> preset, colors from project_config).
+ * `permission` stays empty on the first-party plugin center bridge (origin
+ * check only - that bridge has no manifest, and a tagged API without an
+ * allowing policy is denied by default), while the host surface cloned into
+ * plugin sessions carries the tag the manifest must declare and the user
+ * must grant.
+ */
+orca::jb::ApiDesc filament_list_api(const std::string& permission)
 {
     orca::jb::ApiDesc desc;
-    desc.sync = [](const orca::jb::Json&)
+    desc.permission = permission;
+    desc.sync       = [](const orca::jb::Json&)
     {
         orca::jb::Json filaments = orca::jb::Json::array();
 
@@ -387,93 +395,145 @@ void PluginManager::register_center_apis(orca::jb::Bridge* bridge)
     register_api_checked(bridge, "plugin.pick_import", plugin_pick_import);
 
     orca::jb::ApiDesc plugin_import;
-    plugin_import.sync = [this](const orca::jb::Json& params)
+    // Async by contract: the import does 64MB-class IO; deferring keeps it
+    // out of the webview message callback, where sync handlers run inline.
+    plugin_import.async = [this](const orca::jb::Json& params, orca::jb::Responder responder)
     {
-        const std::string path = params.value("path", "");
-        const std::string kind = params.value("kind", "zip");
-        if (path.empty())
-            return orca::jb::ApiOutcome::error(orca::jb::RpcErrc::InvalidParams, "path is required");
+        // mutable: the Responder senders are non-const members of the copy.
+        wxTheApp->CallAfter([this, params, responder]() mutable
+        {
+            const std::string path = params.value("path", "");
+            const std::string kind = params.value("kind", "zip");
+            if (path.empty())
+            {
+                responder.send_error(orca::jb::RpcErrc::InvalidParams, "path is required");
+                return;
+            }
 
-        std::string plugin_id;
-        std::string error;
-        if (!import_plugin_from(path, kind, plugin_id, error))
-            return orca::jb::ApiOutcome::ok_value(orca::jb::Json{{"ok", false}, {"error", error}});
-        return orca::jb::ApiOutcome::ok_value(orca::jb::Json{{"ok", true}, {"id", plugin_id}});
+            std::string plugin_id;
+            std::string error;
+            if (!import_plugin_from(path, kind, plugin_id, error))
+                responder.send_result(orca::jb::Json{{"ok", false}, {"error", error}});
+            else
+                responder.send_result(orca::jb::Json{{"ok", true}, {"id", plugin_id}});
+        });
     };
     register_api_checked(bridge, "plugin.import", plugin_import);
 
     orca::jb::ApiDesc plugin_remove;
-    plugin_remove.sync = [this](const orca::jb::Json& params)
+    // Async by contract: removing a running plugin tears down another
+    // webview's controller and tab window - never inline in a callback.
+    plugin_remove.async = [this](const orca::jb::Json& params, orca::jb::Responder responder)
     {
-        const std::string plugin_id = params.value("id", "");
-        if (plugin_id.empty())
-            return orca::jb::ApiOutcome::ok_value(orca::jb::Json{{"ok", false}, {"error", "plugin id is required"}});
-
-        if (is_running(plugin_id))
+        wxTheApp->CallAfter([this, params, responder]() mutable
         {
-            // The tab teardown path unloads the session before we delete files.
-            MainFrame* frame = wxGetApp().mainframe;
-            if (!frame || !frame->close_plugin_tab(plugin_id))
-                return orca::jb::ApiOutcome::ok_value(orca::jb::Json{{"ok", false}, {"error", "close the running plugin first"}});
-        }
+            const std::string plugin_id = params.value("id", "");
+            if (plugin_id.empty())
+            {
+                responder.send_result(orca::jb::Json{{"ok", false}, {"error", "plugin id is required"}});
+                return;
+            }
 
-        boost::system::error_code ec;
-        boost::filesystem::remove_all(boost::filesystem::path(m_plugins_root) / plugin_id, ec);
-        if (ec)
-            return orca::jb::ApiOutcome::ok_value(orca::jb::Json{{"ok", false}, {"error", ec.message()}});
-        return orca::jb::ApiOutcome::ok_value(orca::jb::Json{{"ok", true}});
+            if (is_running(plugin_id))
+            {
+                // The tab teardown path unloads the session before we delete files.
+                MainFrame* frame = wxGetApp().mainframe;
+                if (!frame || !frame->close_plugin_tab(plugin_id))
+                {
+                    responder.send_result(orca::jb::Json{{"ok", false}, {"error", "close the running plugin first"}});
+                    return;
+                }
+            }
+
+            boost::system::error_code ec;
+            boost::filesystem::remove_all(boost::filesystem::path(m_plugins_root) / plugin_id, ec);
+            if (ec)
+                responder.send_result(orca::jb::Json{{"ok", false}, {"error", ec.message()}});
+            else
+                responder.send_result(orca::jb::Json{{"ok", true}});
+        });
     };
     register_api_checked(bridge, "plugin.remove", plugin_remove);
 
     orca::jb::ApiDesc plugin_open;
-    plugin_open.sync = [](const orca::jb::Json& params)
+    // Async by contract: opening runs a modal permission prompt and creates a
+    // window plus a webview controller.
+    plugin_open.async = [](const orca::jb::Json& params, orca::jb::Responder responder)
     {
-        MainFrame* frame = wxGetApp().mainframe;
-        if (!frame)
-            return orca::jb::ApiOutcome::error(orca::jb::RpcErrc::InternalError, "main frame not ready");
+        wxTheApp->CallAfter([params, responder]() mutable
+        {
+            MainFrame* frame = wxGetApp().mainframe;
+            if (!frame)
+            {
+                responder.send_error(orca::jb::RpcErrc::InternalError, "main frame not ready");
+                return;
+            }
 
-        const std::string plugin_id = params.value("id", "");
-        if (plugin_id.empty())
-            return orca::jb::ApiOutcome::error(orca::jb::RpcErrc::InvalidParams, "plugin id is required");
+            const std::string plugin_id = params.value("id", "");
+            if (plugin_id.empty())
+            {
+                responder.send_error(orca::jb::RpcErrc::InvalidParams, "plugin id is required");
+                return;
+            }
 
-        if (!frame->open_plugin_tab(plugin_id))
-            return orca::jb::ApiOutcome::ok_value(orca::jb::Json{{"ok", false}, {"error", "failed to open plugin"}});
-        return orca::jb::ApiOutcome::ok_value(orca::jb::Json{{"ok", true}});
+            if (!frame->open_plugin_tab(plugin_id))
+                responder.send_result(orca::jb::Json{{"ok", false}, {"error", "failed to open plugin"}});
+            else
+                responder.send_result(orca::jb::Json{{"ok", true}});
+        });
     };
     register_api_checked(bridge, "plugin.open", plugin_open);
 
     orca::jb::ApiDesc plugin_close;
-    plugin_close.sync = [](const orca::jb::Json& params)
+    // Async by contract: closing destroys a tab window and its webview
+    // controller from inside someone else's message callback otherwise.
+    plugin_close.async = [](const orca::jb::Json& params, orca::jb::Responder responder)
     {
-        MainFrame* frame = wxGetApp().mainframe;
-        if (!frame)
-            return orca::jb::ApiOutcome::error(orca::jb::RpcErrc::InternalError, "main frame not ready");
+        wxTheApp->CallAfter([params, responder]() mutable
+        {
+            MainFrame* frame = wxGetApp().mainframe;
+            if (!frame)
+            {
+                responder.send_error(orca::jb::RpcErrc::InternalError, "main frame not ready");
+                return;
+            }
 
-        const std::string plugin_id = params.value("id", "");
-        if (plugin_id.empty())
-            return orca::jb::ApiOutcome::error(orca::jb::RpcErrc::InvalidParams, "plugin id is required");
+            const std::string plugin_id = params.value("id", "");
+            if (plugin_id.empty())
+            {
+                responder.send_error(orca::jb::RpcErrc::InvalidParams, "plugin id is required");
+                return;
+            }
 
-        if (!frame->close_plugin_tab(plugin_id))
-            return orca::jb::ApiOutcome::ok_value(orca::jb::Json{{"ok", false}, {"error", "failed to close plugin"}});
-        return orca::jb::ApiOutcome::ok_value(orca::jb::Json{{"ok", true}});
+            if (!frame->close_plugin_tab(plugin_id))
+                responder.send_result(orca::jb::Json{{"ok", false}, {"error", "failed to close plugin"}});
+            else
+                responder.send_result(orca::jb::Json{{"ok", true}});
+        });
     };
     register_api_checked(bridge, "plugin.close", plugin_close);
 
     orca::jb::ApiDesc plugin_install_sample;
-    plugin_install_sample.sync = [this](const orca::jb::Json&)
+    // Async by contract: same IO weight as plugin.import.
+    plugin_install_sample.async = [this](const orca::jb::Json&, orca::jb::Responder responder)
     {
-        const boost::filesystem::path sample =
-            boost::filesystem::path(Slic3r::resources_dir()) / "web" / "sample_plugin" / "filament_demo";
+        wxTheApp->CallAfter([this, responder]() mutable
+        {
+            const boost::filesystem::path sample =
+                boost::filesystem::path(Slic3r::resources_dir()) / "web" / "sample_plugin" / "filament_demo";
 
-        std::string plugin_id;
-        std::string error;
-        if (!import_plugin_from(sample.string(), "dir", plugin_id, error))
-            return orca::jb::ApiOutcome::ok_value(orca::jb::Json{{"ok", false}, {"error", error}});
-        return orca::jb::ApiOutcome::ok_value(orca::jb::Json{{"ok", true}, {"id", plugin_id}});
+            std::string plugin_id;
+            std::string error;
+            if (!import_plugin_from(sample.string(), "dir", plugin_id, error))
+                responder.send_result(orca::jb::Json{{"ok", false}, {"error", error}});
+            else
+                responder.send_result(orca::jb::Json{{"ok", true}, {"id", plugin_id}});
+        });
     };
     register_api_checked(bridge, "plugin.install_sample", plugin_install_sample);
 
-    register_api_checked(bridge, "orca.filament.list", filament_list_api());
+    // Center bridge: origin-only filament list (see filament_list_api).
+    register_api_checked(bridge, "orca.filament.list", filament_list_api(std::string()));
     register_api_checked(bridge, "orca.host.info", host_info_api());
 }
 
@@ -490,9 +550,10 @@ orca::plugin::PluginHost* PluginManager::ensure_host()
     m_host                    = std::make_unique<orca::plugin::PluginHost>(env);
 
     // Host API surface cloned into every plugin session bridge (same handlers
-    // the plugin center page sees).
+    // the plugin center page sees). filament.list is tagged here: plugin
+    // sessions go through the manifest-declared permission chain.
     register_api_checked(m_host.get(), "orca.host.info", host_info_api());
-    register_api_checked(m_host.get(), "orca.filament.list", filament_list_api());
+    register_api_checked(m_host.get(), "orca.filament.list", filament_list_api("project.filaments.read"));
 
     return m_host.get();
 }
@@ -514,7 +575,13 @@ std::shared_ptr<PluginTabPage> PluginManager::open_plugin(const std::string& plu
         return nullptr;
     }
 
-    prompt_plugin_permissions(manifest.value, tab_parent);
+    if (!prompt_plugin_permissions(manifest.value, tab_parent))
+    {
+        // Clean deny: a plugin whose requested permission was refused (now or
+        // on an earlier open - refusals are persisted) never opens.
+        BOOST_LOG_TRIVIAL(info) << "PluginManager: permission refused, not opening " << plugin_id;
+        return nullptr;
+    }
 
     // The tab panel must exist before load: the session webview is parented
     // to its native handle, then bound back into the tab.
@@ -584,16 +651,30 @@ std::vector<std::string> PluginManager::installed_ids() const
     return ids;
 }
 
-void PluginManager::prompt_plugin_permissions(const orca::plugin::PluginManifest& manifest, wxWindow* parent)
+bool PluginManager::prompt_plugin_permissions(const orca::plugin::PluginManifest& manifest, wxWindow* parent)
 {
-    orca::plugin::PermissionStore store(m_permission_store_path);
-    if (!store.load().ok())
-        return;
+    orca::plugin::PluginHost* host = ensure_host();
+    if (!host)
+        return false;
+
+    // Must be the host's store instance: every session policy reads the
+    // grant table it owns, so grants/denials take effect in live sessions
+    // and save() persists them. A separate store object would only touch
+    // disk and the loaded session would keep denying the tag.
+    orca::plugin::PermissionStore& store = host->permission_store();
 
     bool changed = false;
+    bool denied  = false;
     for (const std::string& tag : manifest.permissions)
     {
-        if (store.query(manifest.id, tag) != orca::plugin::PermissionState::Unknown)
+        const orca::plugin::PermissionState state = store.query(manifest.id, tag);
+        if (state == orca::plugin::PermissionState::Denied)
+        {
+            // Persisted refusal from an earlier open: fail without re-asking.
+            denied = true;
+            continue;
+        }
+        if (state == orca::plugin::PermissionState::Granted)
             continue;
 
         wxMessageDialog dlg(parent,
@@ -603,11 +684,19 @@ void PluginManager::prompt_plugin_permissions(const orca::plugin::PluginManifest
         if (dlg.ShowModal() == wxID_YES)
         {
             store.grant(manifest.id, tag);
-            changed = true;
         }
+        else
+        {
+            // Revoke records an explicit Denied so the next open does not
+            // re-ask this tag.
+            store.revoke(manifest.id, tag);
+            denied = true;
+        }
+        changed = true;
     }
     if (changed)
         store.save();
+    return !denied;
 }
 
 bool PluginManager::import_plugin_from(const std::string& path, const std::string& kind, std::string& plugin_id, std::string& error)
@@ -689,6 +778,21 @@ bool PluginManager::import_plugin_from(const std::string& path, const std::strin
 
     // Overwrite-install: replace any existing installation of the same id.
     const boost::filesystem::path dest = boost::filesystem::path(m_plugins_root) / manifest.value.id;
+
+    // A running plugin holds its files through the WebView2 virtual host;
+    // deleting under it leaves a half-removed directory. Same guard as
+    // plugin.remove: close the tab (which unloads the session) first.
+    if (is_running(manifest.value.id))
+    {
+        MainFrame* frame = wxGetApp().mainframe;
+        if (!frame || !frame->close_plugin_tab(manifest.value.id))
+        {
+            error = "close the running plugin before reinstalling it";
+            boost::filesystem::remove_all(scratch, ec);
+            return false;
+        }
+    }
+
     boost::filesystem::remove_all(dest, ec);
     boost::filesystem::rename(base, dest, ec);
     if (ec)

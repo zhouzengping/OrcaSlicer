@@ -36,6 +36,8 @@ private:
     void create_webview();
     void register_demo_apis();
     void apply_view_bounds();
+    // Bounds of the loaded plugin session webview (shares the host panel).
+    void apply_plugin_view_bounds();
     void ensure_plugin_host();
     void prompt_plugin_permissions(const orca::plugin::PluginManifest& manifest);
     void report_failure(const orca::wv::Status& status);

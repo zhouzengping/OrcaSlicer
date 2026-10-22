@@ -77,8 +77,14 @@ protected:
     virtual bool on_navigation(const std::string& url);
     virtual void on_document_loaded(const std::string& url);
 
-private:
+    /*
+     * Push the host panel client size (physical pixels) into the view.
+     * No-op unless the view is Ready; subclasses adopting a still-Creating
+     * view chain this into the view's on_created slot for the initial size.
+     */
     void apply_bounds();
+
+private:
     void close_view();
     void on_size(wxSizeEvent& event);
     void on_view_error(const orca::wv::Status& status);

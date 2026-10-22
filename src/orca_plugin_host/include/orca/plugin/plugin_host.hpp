@@ -7,6 +7,7 @@
 
 #include "orca/jsbridge/bridge.hpp"
 #include "orca/plugin/export.h"
+#include "orca/plugin/permission_store.hpp"
 #include "orca/webview/types.hpp"
 #include "orca/webview/webview.hpp"
 
@@ -79,6 +80,13 @@ public:
 
     wv::Status            unload(const std::string& plugin_id);
     std::vector<std::string> loaded_ids() const;
+
+    /*
+     * The permission store backing the policy of every session created by
+     * this host. Grants and denials made through this instance are visible
+     * to already-loaded sessions immediately; save() persists them.
+     */
+    PermissionStore& permission_store() const;
 
 private:
     struct Impl;

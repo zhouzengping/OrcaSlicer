@@ -195,6 +195,11 @@ PluginHost::PluginHost(HostEnv env)
     m_impl->store_load_status = m_impl->store.load();
 }
 
+PermissionStore& PluginHost::permission_store() const
+{
+    return m_impl->store;
+}
+
 wv::Status PluginHost::register_api(const std::string& method, const jb::ApiDesc& desc)
 {
     Impl& impl = *m_impl;
