@@ -24,6 +24,11 @@
 - Monitor 页不含 webview（grep 证实）；其余 CreateWebView 使用者
   （MarkdownTip / ModelMall / Project / StatusPanel / ReleaseNote 等）不参与
   SSWCP、不建订阅、无需清理。
+  **更正（review 2 指出）**：MonitorPanel 内嵌 StatusPanel，其摄像头视图
+  `m_custom_camera_view` 确实经 CreateWebView 创建（StatusPanel.cpp:1056）——
+  本条首句表述有误。结论不变：StatusPanel 不调 handle_web_message、不参与
+  SSWCP、无订阅需要清理；其 sink 条目已由 ~WebViewRef 的统一 unregister
+  （review 2 SHOULD FIX，已修）在销毁时摘除。
 结论：被删除的 `wxEVT_DESTROY` 兜底所覆盖的全部场景均已被 `on_webview_delete`
 路径覆盖。
 

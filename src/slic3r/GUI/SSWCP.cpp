@@ -8138,8 +8138,9 @@ void SSWCP::on_webview_delete(WebViewHandle view)
         }
     }
 
-    // Sink teardown backstop: hosts unregister explicitly, but erase here so a
-    // missed path cannot leave a dangling sink behind. Erase is idempotent.
+    // Sink teardown backstop: the orca-stack host unregisters explicitly, and
+    // every legacy view is covered by ~WebViewRef; erase here so no missed
+    // path can leave a dangling sink behind. Erase is idempotent.
     unregister_web_sink(view);
 }
 

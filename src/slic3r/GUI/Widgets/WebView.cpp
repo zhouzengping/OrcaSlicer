@@ -344,6 +344,9 @@ public:
         assert(iter != g_webviews.end());
         if (iter != g_webviews.end())
             g_webviews.erase(iter);
+        // Drop the SSWCP downlink sink here so teardown never depends on the
+        // embedding host calling unregister itself (most never join SSWCP).
+        Slic3r::GUI::SSWCP::unregister_wx_sink(m_webView);
         // Drop pending handler installs so a later g_delay_webviews flush never
         // calls AddScriptMessageHandler() on a destroyed view.
         // See bambulab/BambuStudio #11004 and #10968.

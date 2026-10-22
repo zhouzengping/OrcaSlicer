@@ -90,6 +90,7 @@
 #include "3DScene.hpp"
 #include "MainFrame.hpp"
 #include "Plater.hpp"
+#include "PluginManager.hpp"
 #include "GLCanvas3D.hpp"
 #include "GeneratedConfig.hpp"
 
@@ -1283,6 +1284,13 @@ GUI_App::GUI_App()
     profiler.mark("m_fltviews.set_app");
 }
 
+PluginManager* GUI_App::plugin_manager()
+{
+    if (!m_plugin_manager)
+        m_plugin_manager = std::make_unique<PluginManager>();
+    return m_plugin_manager.get();
+}
+
 void GUI_App::shutdown(bool isRecreate)
 {
     BOOST_LOG_TRIVIAL(info) << "GUI_App::shutdown enter";
@@ -1326,6 +1334,17 @@ void GUI_App::shutdown(bool isRecreate)
 
     if (m_is_recreating_gui) return;
     m_is_closing = true;
+
+    // Plugin teardown safety net: with the 1.4 plugin tab system in place the
+    // full order will be close_all_plugin_tabs() here (mainframe still alive,
+    // run once per real close) and then release the manager, whose PluginHost
+    // destructor reclaims any leftover sessions. Until then this is the net.
+    if (m_plugin_manager) {
+        if (mainframe != nullptr)
+            mainframe->close_all_plugin_tabs();
+        m_plugin_manager.reset();
+    }
+
     BOOST_LOG_TRIVIAL(info) << "GUI_App::shutdown exit";
 }
 
