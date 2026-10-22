@@ -25,6 +25,9 @@ public:
 
 private:
     void setup_page();
+
+    // Base hook: fires once the view is Ready; navigates to the entry url.
+    void on_view_created() override;
 };
 
 } // GUI
