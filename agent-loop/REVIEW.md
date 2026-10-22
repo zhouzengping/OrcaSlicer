@@ -402,3 +402,123 @@ tab 窗口销毁、HWND 尚活时执行）要么移到 m_is_recreating_gui 早�
 1.7 冒烟新增验证点（本轮修复的直接验收）：权限弹窗 → Allow → tagged
 orca.filament.list 调用成功；点 No → 插件不打开、再次 open 不再弹窗；插件 tab
 打开即有内容、无需 resize；DevDialog Load demo plugin 后插件视图立即可见。
+
+---
+
+## Round 1 / review 6 — 7eed4467b8 "1.3 implement PluginCenterPage::setup_page"
+
+对照 DIRECTIVES 1.3 逐项核对。联动路径全部实读：bridge.cpp（extract_origin /
+origin_allowed / attach 时序）、webview.cpp（pending_init_scripts / report_created）、
+backend_win.cpp（apply_custom_schemes / SourceChanged）、backend_gtk.cpp、
+backend_mac.mm、plugin_host.cpp（对照模板）、GUI_App::get_international_url、
+resources/web/plugin_center/app.js。origin 字符串已按 extract_origin 的实现逐字符
+模拟比对（见 OK 第 2 条）。Windows 主链路无 MUST FIX；另发现两条**先于本 commit
+的框架级非 Windows 缺陷**（见 SHOULD FIX 1/2，与 plugin session 同病，不阻塞
+Windows 冒烟）。
+
+- [OK] **A. scheme/URL 方案与安全性**：自定义 scheme `plugin-center`，
+  root=resources_dir()/web/plugin_center（PluginCenterPage.cpp:46-48，generic_string）。
+  Windows 经 WebView2 虚拟主机映射成真实 https origin——backend_win.cpp:630 把
+  host 定死为 `<scheme>.orca`，与入口 URL 的 host `plugin-center.orca` 一致；
+  mac/linux 保持 `plugin-center://center/` 形态，与 plugin_host.cpp:368-374 的
+  分平台模板完全同构。方案理由按约写在注释里（:15-25：静态随包内容、无网络
+  往返、不与外部共享 cookie jar、origin 兼作 bridge 门禁的内容身份）。路径
+  边界安全：三平台 handler 都被钉在 root 内——WebView2 虚拟主机映射本身只暴露
+  映射目录（且 ALLOW 只影响该 webview 内的跨源子资源）；GTK handler 显式拒绝
+  `..`（backend_gtk.cpp:73-77）；mac handler 同样拒绝（backend_mac.mm:405-409）。
+  root 是只读随包资源目录，页面无法借 scheme 读任意本地文件。
+- [OK] **B. origin 匹配逐字符验证通过（Windows 与 GTK）**：实际导航 URL 是
+  `get_international_url` 拼出的 `https://plugin-center.orca/index.html?locale=
+  zh-CN&dark_mode=0`；bridge 的 extract_origin（bridge.cpp:24-35，"://" 后取到
+  第一个 /?# 前）得 `https://plugin-center.orca`——scheme https、无端口、无尾
+  斜杠、host 全小写，与 allowed_origins[0] 26 字符全等（已用脚本按同算法模拟
+  比对）。mac/linux 分支 `plugin-center://center/index.html?...` →
+  `plugin-center://center`，与 allowed_origins[1] 22 字符全等。双 origin 并列
+  与 plugin_host.cpp:314 的先例一致（精确匹配下至多一个生效）。hello 竞态不
+  存在：SDK 不在 document-start 自动发帧，hello 由页面 init() 主动 ready()
+  触发（orca_sdk.js:171-179），此刻 SourceChanged（Win）/notify::uri（GTK）
+  早已把 session.origin 置好。
+- [OK] **B. attach 时序**：Windows 下 create_view 返回时 controller 创建仍在
+  异步进行（backend_win 环境→controller 两级 COM 回调），attach_bridge 落在
+  Creating 态，SDK 进 pending_init_scripts；report_created（webview.cpp:62-68）
+  先 State::Ready → flush init scripts → 再回调 on_created → on_view_created →
+  navigate——首次导航必然带 SDK 且在 document-start，顺序由框架保证。session_id
+  ="plugin-center"，context 带 kind 标识。register_center_apis 在 attach 成功后
+  调用（:73），且挂在 wxGetApp().plugin_manager() 这个 GUI_App 持有的实例上
+  （review-3/5 点 (a) 兑现）：plugin.list 的 running 与 open/close 和 MainFrame
+  的 tab 状态同源。center bridge 九个 API 全部空 permission（origin-only），
+  policy 留空无碍（空 tag 永不 consult policy）。dispatcher/api_timeout_ms 未
+  显式配置——attach_bridge 默认填 wxTheApp->CallAfter（WebViewPageBase.cpp:
+  140-146，与 plugin_host env.dispatcher 同体），BridgeConfig 默认 30000ms，
+  与 review 5 建议值完全一致，功能等价，仅"显式更稳"的措辞未采纳，接受。
+- [OK] **C. 导航与 reload_page**：on_view_created 覆写基类钩子（hpp:30 声明），
+  导航经 get_international_url 拼 `?locale=<lang>-<region>&dark_mode=<0|1>`
+  （GUI_App.cpp:4587-4611，语言/国家码与 dark_color_mode 每次调用现取，
+  首载与重载同一路径）；reload_page 有 is_ready() 守卫。
+- [SHOULD FIX] **C1. reload_page 目前无调用方**：语言切换主路径走 recreate_GUI
+  （GUI_App.cpp:6110），页面整体重建覆盖了该场景；但向导/新手引导后的
+  `m_fltviews.reload_all()`（GUI_App.cpp:4065 / 7405，locale/dark_mode 可能已
+  变）只认三张 legacy map，不认识新栈的 PluginCenterPage → 该路径下插件中心
+  的 locale/dark_mode 停留旧值。建议 1.4/1.6 接线时在 reload_all 同点位补
+  `mainframe->m_plugin_center->reload_page()`（或等价入口），不阻塞。
+- [OK] **D. 前端抽查（1.6 才全面审）**：app.js 调用的 8 个方法名与
+  register_center_apis 注册名逐一相符（plugin.list/pick_import/import/remove/
+  open/close/install_sample、orca.host.info）；响应字段核对一致——plugin.list
+  消费 res.plugins[].{id,name,version,description,permissions,icon,running}
+  （C++ 全部产出，PluginManager.cpp:346-354）；import/install_sample 消费
+  {ok,id|error}、open/close/remove 消费 {ok,error}、pick_import 消费 {path,kind}、
+  host.info 消费 host_version——全部对得上。页面读 `?locale=` 的参数名与
+  get_international_url 拼的参数名一致（dark_mode 参数已下发、页面暂未消费，
+  留 1.6）。
+- [SHOULD FIX] **E1（框架债，非本 commit 引入）macOS origin 全程不被跟踪**：
+  backend_mac.mm 全文件没有任何 report_url_changed 调用（navigation delegate
+  只接了 decidePolicy），session.origin 恒为初始空串 → origin_allowed()
+  （bridge.cpp:407）对非空 allowed_origins 必拒，连 _orca.hello 都吃
+  OriginNotAllowed——插件中心页和所有 plugin session（plugin_host 同机制）在
+  macOS 上 API 全灭。修法：WKNavigationDelegate 补
+  `webView:didCommitNavigation:`（或 didStartProvisional）→ 读
+  m_webview.URL.absoluteString → proxy.report_url_changed。与 E2 同属一个
+  "非 Windows bring-up" 框架修复 commit，不阻塞 Round 1（1.7 冒烟明确是
+  MSVC/Windows），但必须在跨平台宣称成立前修掉。
+- [SHOULD FIX] **E2（框架债，同上）mac/gtk 的 report_created 在 start() 内同步
+  发射，on_created 钩子必然丢失**：backend_mac.mm:154 / backend_gtk.cpp:172 在
+  `Backend::start()` 里同步调 m_proxy.report_created()，而它发生在
+  `WebView::create` 内部——宿主（WebViewPageBase::create_view:109-117、
+  plugin_host.cpp:376、WebViewDevDialog:102）都只能在 create 返回**之后**才能给
+  events().on_created 赋槽 → mac/linux 上 on_created 永远空跑，
+  PluginCenterPage::on_view_created 不触发、页面永不导航（plugin tab 的
+  navigate-only 槽同病）。Windows 之所以正常，是因为 controller 完成回调异步
+  回 UI 线程。修法（框架侧任选其一）：backend 侧把 report_created 推迟到
+  start() 返回之后（mac: dispatch_async 主队列；gtk: g_idle_add），或
+  WebView::create 在调 start() 前允许预置事件槽。修掉之前本 commit 的
+  `#else plugin-center://` 分支在 mac/linux 是死代码。与 E1 合并成一个框架
+  修复 commit 处理，建议排在 1.6 前后，不阻塞 Windows 冒烟。
+- [OK] **E. review 5 两条 SHOULD FIX 状态**：均未在本 commit 顺带处理——
+  (1) plugin.remove 成功后 revoke_all+save 未做（PluginManager.cpp:423-456 无
+  调用；PermissionStore::revoke_all 已存在，permission_store.hpp:48，随时可接）；
+  (2) PluginTabPage 带 session 的构造重载在本 commit 时点仍在（已核
+  7eed4467b8:PluginTabPage.cpp:6-17，无 bounds wrap 的死路径）。两条都属约定
+  内的"随后续块"，不扣分；(2) 已被 HEAD 上的 1.4 commit（73e8a4d6ad）以
+  "删掉带 session 构造"方式处理，下轮（review 7）验收。
+- [OK] **F. 通用**：diff 零 try-catch、零 stub 残留（旧占位注释全部被实装替换）；
+  `git show --stat` 仅 PluginCenterPage.cpp/hpp 两文件 78 行，范围聚焦；风格与
+  WebViewPageBase/WebViewDevDialog 一致（匿名 ns + 理由注释）；编译证据由 1.4
+  commit message 的 "PluginCenterPage compiled this round"（22:14）覆盖，1.7
+  统一冒烟。小备注（不要求改）：Bridge::attach 实际把 SDK init script 加了两次
+  （attach_channel 内 bridge.cpp:300 + attach 尾部 :255），靠 SDK 的
+  `window.__orcaSdk` 幂等守卫无害，属框架既有小瑕疵，顺手时可去掉一处。
+
+### Verdict: APPROVED（Windows 主链路；E1/E2 为先于本 commit 的框架债，
+### 记入后续框架修复 commit，不阻塞 Round 1）
+### Next: 继续 DIRECTIVES 顺序（HEAD 上 1.4 已 commit，下轮 review 73e8a4d6ad）。
+1.4 review 验收清单：(a) recreate-path teardown 是否按 review 4/5 的方案落到
+m_is_recreating_gui 早退之前、两条路径各跑一次且 HWND 尚活；(b) open_plugin_tab
+幂等 + FindPage 寻址（禁裸索引）+ async 双击重入；(c) PluginTabPage session
+绑定入口是否统一到 adopt_session（工作区已见带 session 构造被删，验收其死路径
+消除）；(d) close_plugin_tab 的 RemovePage → close_plugin（unload）→ map erase
+顺序与 bridge 侧 plugin.close/plugin.remove 重入的单向链。**遗留事项登记**：
+(1) plugin.remove 成功后 `host->permission_store().revoke_all(id)` + save（review 5
+逃生门）约定随 1.6 或顺手 commit 兑现；(2) reload_page 调用方接线（本 review
+C1）；(3) 非Windows框架修复 commit：mac report_url_changed（E1）+ mac/gtk 延迟
+report_created（E2）。1.7 冒烟按 review 5 清单 + 本轮新增：插件中心 tab 打开即
+渲染列表（验 scheme/origin/bridge 全链），locale/dark_mode 参数在页面生效。
