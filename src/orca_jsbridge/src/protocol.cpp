@@ -12,6 +12,10 @@ namespace
 
 constexpr std::size_t g_max_id_bytes = 64;
 
+// Method names are dot-separated namespace paths of 2..8 segments.
+constexpr std::size_t g_min_method_segments = 2;
+constexpr std::size_t g_max_method_segments = 8;
+
 /*
  * Strict field readers. nlohmann value()/at() throw on type mismatch and this
  * codec is exception-free, so every access goes through contains() + is_*().
@@ -30,7 +34,7 @@ bool valid_id(const Json& obj, std::string& id)
     return read_string(obj, "id", id) && !id.empty() && id.size() <= g_max_id_bytes;
 }
 
-// [a-z0-9_]+ between [from, to)
+// [a-zA-Z0-9_]+ between [from, to)
 bool valid_segment(const std::string& name, std::size_t from, std::size_t to)
 {
     if (from >= to)
@@ -39,7 +43,7 @@ bool valid_segment(const std::string& name, std::size_t from, std::size_t to)
     for (std::size_t i = from; i < to; ++i)
     {
         const char c = name[i];
-        const bool ok = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_';
+        const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
         if (!ok)
             return false;
     }
@@ -52,15 +56,36 @@ namespace detail {
 
 bool valid_method_name(const std::string& name)
 {
-    // Exactly one dot; both segments non-empty [a-z0-9_]*.
-    const std::string::size_type dot = name.find('.');
-    if (dot == std::string::npos)
-        return false;
+    /*
+     * Namespace-path method names: ^[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+){1,7}$
+     * (2..8 non-empty segments). Convention: domain.subdomain...action,
+     * e.g. "demo.echo" or "orca.preset.filament.getFilaments"; every
+     * intermediate node (e.g. "orca.preset.info") is itself a valid API
+     * name, so each namespace level may host its own APIs. Lowercase is
+     * recommended for namespace segments; camelCase verb segments
+     * (getPresetnum style) are allowed. Matching stays case-sensitive
+     * end-to-end: "orca.preset" and "orca.Preset" are distinct APIs.
+     * The segment cap bounds pathological deep paths.
+     */
+    std::size_t segments   = 1;
+    std::size_t seg_start  = 0;
+    for (std::size_t i = 0; i <= name.size(); ++i)
+    {
+        if (i != name.size() && name[i] != '.')
+            continue;
 
-    if (name.find('.', dot + 1) != std::string::npos)
-        return false;
+        // Segment boundary: also rejects empty segments (".a", "a..b", "a.").
+        if (!valid_segment(name, seg_start, i))
+            return false;
 
-    return valid_segment(name, 0, dot) && valid_segment(name, dot + 1, name.size());
+        if (i == name.size())
+            break;
+
+        ++segments;
+        seg_start = i + 1;
+    }
+
+    return segments >= g_min_method_segments && segments <= g_max_method_segments;
 }
 
 } // namespace detail

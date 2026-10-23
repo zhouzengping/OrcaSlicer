@@ -384,12 +384,85 @@ TEST_CASE("register_api rejects malformed and reserved method names", "[orca_jsb
     ApiDesc desc;
     desc.sync = [](const Json& params) { return ApiOutcome::ok_value(params); };
 
-    CHECK(h.bridge.register_api("Demo.echo", desc).code == wv::Errc::InvalidArgument);
     CHECK(h.bridge.register_api("demoecho", desc).code == wv::Errc::InvalidArgument);
-    CHECK(h.bridge.register_api("demo.echo.x", desc).code == wv::Errc::InvalidArgument);
+    CHECK(h.bridge.register_api("a.b.c.d.e.f.g.h.i", desc).code == wv::Errc::InvalidArgument);   // 9 segments
+    CHECK(h.bridge.register_api("demo..echo", desc).code == wv::Errc::InvalidArgument);
+    CHECK(h.bridge.register_api(".demo.echo", desc).code == wv::Errc::InvalidArgument);
+    CHECK(h.bridge.register_api("demo.echo.", desc).code == wv::Errc::InvalidArgument);
+    CHECK(h.bridge.register_api("demo.echo-x", desc).code == wv::Errc::InvalidArgument);
     CHECK(h.bridge.register_api("", desc).code == wv::Errc::InvalidArgument);
     // "_orca.*" is reserved for the built-in handshake.
     CHECK(h.bridge.register_api("_orca.custom", desc).code == wv::Errc::InvalidArgument);
+}
+
+TEST_CASE("namespace-path APIs register and dispatch end to end", "[orca_jsbridge][bridge]")
+{
+    BridgeHarness h;
+
+    // Every namespace level may host an API of its own: the node "orca.preset"
+    // and methods nested below it coexist; camelCase verb segments are allowed.
+    REQUIRE(h.bridge.register_api("orca.preset", sync_desc([](const Json&) { return Json{{"node", "preset"}}; })).ok());
+    REQUIRE(h.bridge.register_api("orca.preset.info", sync_desc([](const Json&) { return Json{{"node", "info"}}; })).ok());
+    REQUIRE(h.bridge.register_api("orca.preset.filament.getfilaments",
+                                  sync_desc([](const Json&) { return Json{{"filaments", true}}; })).ok());
+    REQUIRE(h.bridge.register_api("orca.preset.process.getxxspeed",
+                                  sync_desc([](const Json&) { return Json{{"speed", 42}}; })).ok());
+    REQUIRE(h.bridge.register_api("orca.preset.getPresetnum",
+                                  sync_desc([](const Json&) { return Json{{"num", 7}}; })).ok());
+
+    struct Case
+    {
+        const char* method;
+        Json        want;
+    };
+    const std::vector<Case> cases = {
+        {"orca.preset", Json{{"node", "preset"}}},
+        {"orca.preset.info", Json{{"node", "info"}}},
+        {"orca.preset.filament.getfilaments", Json{{"filaments", true}}},
+        {"orca.preset.process.getxxspeed", Json{{"speed", 42}}},
+        {"orca.preset.getPresetnum", Json{{"num", 7}}},
+    };
+
+    for (size_t i = 0; i < cases.size(); ++i)
+    {
+        CAPTURE(cases[i].method);
+        h.bridge.feed_message(jb::encode_call("c" + std::to_string(i), cases[i].method, Json::object()));
+
+        const auto   frames = posted_frames(*h.log);
+        const Frame* result = find_result(frames, "c" + std::to_string(i));
+        REQUIRE(result != nullptr);
+        CHECK(result->ok);
+        CHECK(result->result == cases[i].want);
+    }
+}
+
+TEST_CASE("method names are case-sensitive", "[orca_jsbridge][bridge]")
+{
+    BridgeHarness h;
+
+    // Registry keys compare byte-wise: "Orca.Preset" and "orca.preset" are
+    // distinct APIs and must not shadow each other.
+    REQUIRE(h.bridge.register_api("Orca.Preset", sync_desc([](const Json&) { return Json{{"which", "upper"}}; })).ok());
+    REQUIRE(h.bridge.register_api("orca.preset", sync_desc([](const Json&) { return Json{{"which", "lower"}}; })).ok());
+
+    const auto apis = h.bridge.api_list();
+    size_t     seen = 0;
+    for (const auto& entry : apis)
+        seen += (entry.first == "Orca.Preset" || entry.first == "orca.preset") ? 1 : 0;
+    CHECK(seen == 2);
+
+    h.bridge.feed_message(jb::encode_call("c1", "orca.preset", Json::object()));
+    h.bridge.feed_message(jb::encode_call("c2", "Orca.Preset", Json::object()));
+
+    const auto   frames = posted_frames(*h.log);
+    const Frame* lower  = find_result(frames, "c1");
+    const Frame* upper  = find_result(frames, "c2");
+    REQUIRE(lower != nullptr);
+    REQUIRE(upper != nullptr);
+    CHECK(lower->ok);
+    CHECK(lower->result == Json{{"which", "lower"}});
+    CHECK(upper->ok);
+    CHECK(upper->result == Json{{"which", "upper"}});
 }
 
 TEST_CASE("feeding an unattached bridge is harmless", "[orca_jsbridge][bridge]")

@@ -334,7 +334,7 @@ bool Bridge::attached() const
 wv::Status Bridge::register_api(const std::string& method, const ApiDesc& desc)
 {
     if (!detail::valid_method_name(method))
-        return wv::Status::make(wv::Errc::InvalidArgument, "method must match ^[a-z0-9_]+.[a-z0-9_]+$");
+        return wv::Status::make(wv::Errc::InvalidArgument, "method must match ^[a-zA-Z0-9_]+(\\.[a-zA-Z0-9_]+){1,7}$");
 
     if (method.rfind(g_reserved_prefix, 0) == 0)
         return wv::Status::make(wv::Errc::InvalidArgument, "\"_orca.*\" methods are reserved");

@@ -128,7 +128,9 @@ public:
     wv::Status detach();
     bool       attached() const;
 
-    // method must match ^[a-z0-9_]+\.[a-z0-9_]+$; "_orca.*" is reserved.
+    // method must match ^[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+){1,7}$ (2-8 dot-separated
+    // segments; every namespace level may host APIs, camelCase allowed, case-
+    // sensitive); "_orca.*" is reserved.
     wv::Status register_api(const std::string& method, const ApiDesc& desc);
     wv::Status unregister_api(const std::string& method);
 

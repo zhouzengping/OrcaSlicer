@@ -6,6 +6,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <string>
+#include <vector>
 
 #include "orca/jsbridge/protocol.hpp"
 
@@ -128,6 +129,36 @@ TEST_CASE("malformed payloads are rejected with the documented codes", "[orca_js
     }
 }
 
+TEST_CASE("namespace-path method names decode as calls", "[orca_jsbridge][protocol]")
+{
+    /*
+     * Method names are dot-separated namespace paths of 2..8 non-empty
+     * [a-zA-Z0-9_]+ segments. Every namespace level may host an API of its
+     * own ("orca.preset.info" and "orca.preset.filament.getfilaments"
+     * coexist); camelCase verb segments are allowed; matching is
+     * case-sensitive.
+     */
+    const std::vector<std::string> names = {
+        "demo.echo",                          // 2 segments: legacy shape stays valid
+        "orca.preset.info",                   // 3 segments: intermediate node as an API
+        "orca.preset.filament.getfilaments",  // 4 segments
+        "orca.preset.process.getxxspeed",     // 4 segments
+        "orca.preset.getPresetnum",           // camelCase verb segment
+        "Demo.echo",                          // mixed case segments
+        "a.b.c.d.e.f.g.h",                    // 8 segments: upper bound
+    };
+
+    for (const std::string& method : names)
+    {
+        CAPTURE(method);
+        Frame   frame;
+        RpcErrc err = RpcErrc::InternalError;
+        REQUIRE(decode_frame(encode_call("c1", method, Json::object()), frame, err));
+        CHECK(frame.type == "call");
+        CHECK(frame.method == method);
+    }
+}
+
 TEST_CASE("illegal call identifiers and methods are rejected", "[orca_jsbridge][protocol]")
 {
     Frame   frame;
@@ -135,17 +166,29 @@ TEST_CASE("illegal call identifiers and methods are rejected", "[orca_jsbridge][
 
     // The exact error code for these is not pinned by the header comment, so
     // only the rejection itself is asserted.
-    SECTION("method with uppercase letters")
-    {
-        REQUIRE(!decode_frame(R"({"orca":1,"type":"call","id":"c1","method":"Demo.echo","params":{}})", frame, err));
-    }
     SECTION("method without a dot")
     {
         REQUIRE(!decode_frame(R"({"orca":1,"type":"call","id":"c1","method":"demoecho","params":{}})", frame, err));
     }
-    SECTION("method with two dots")
+    SECTION("method with nine segments")
     {
-        REQUIRE(!decode_frame(R"({"orca":1,"type":"call","id":"c1","method":"demo.echo.x","params":{}})", frame, err));
+        REQUIRE(!decode_frame(R"({"orca":1,"type":"call","id":"c1","method":"a.b.c.d.e.f.g.h.i","params":{}})", frame, err));
+    }
+    SECTION("method with consecutive dots")
+    {
+        REQUIRE(!decode_frame(R"({"orca":1,"type":"call","id":"c1","method":"demo..echo","params":{}})", frame, err));
+    }
+    SECTION("method with a leading dot")
+    {
+        REQUIRE(!decode_frame(R"({"orca":1,"type":"call","id":"c1","method":".demo.echo","params":{}})", frame, err));
+    }
+    SECTION("method with a trailing dot")
+    {
+        REQUIRE(!decode_frame(R"({"orca":1,"type":"call","id":"c1","method":"demo.echo.","params":{}})", frame, err));
+    }
+    SECTION("method with an illegal character")
+    {
+        REQUIRE(!decode_frame(R"({"orca":1,"type":"call","id":"c1","method":"demo.echo-x","params":{}})", frame, err));
     }
     SECTION("empty method")
     {

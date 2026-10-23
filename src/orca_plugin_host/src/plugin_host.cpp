@@ -70,36 +70,42 @@ wv::Status invalid_argument(std::string message)
     return wv::Status::make(wv::Errc::InvalidArgument, std::move(message));
 }
 
-// Same rule as the bridge registry: ^[a-z0-9_]+\.[a-z0-9_]+$.
+// Same rule as the bridge registry: ^[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+){1,7}$
+// (2-8 dot-separated segments; namespace paths, camelCase allowed,
+// case-sensitive).
 bool is_valid_api_method(const std::string& method)
 {
-    const size_t dot = method.find('.');
-    if (dot == std::string::npos)
+    size_t segments  = 1;
+    size_t seg_start = 0;
+    for (size_t i = 0; i <= method.size(); ++i)
     {
-        return false;
-    }
-    if (method.find('.', dot + 1) != std::string::npos)
-    {
-        return false;
-    }
-
-    auto segment_ok = [&method](size_t from, size_t to)
-    {
-        if (from >= to)
+        if (i != method.size() && method[i] != '.')
         {
-            return false;
+            continue;
         }
-        for (size_t i = from; i < to; ++i)
+
+        if (seg_start >= i)
         {
-            const char c = method[i];
-            if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_'))
+            return false;   // empty segment: ".a", "a..b", "a."
+        }
+        for (size_t j = seg_start; j < i; ++j)
+        {
+            const char c = method[j];
+            if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_'))
             {
                 return false;
             }
         }
-        return true;
-    };
-    return segment_ok(0, dot) && segment_ok(dot + 1, method.size());
+
+        if (i == method.size())
+        {
+            break;
+        }
+        ++segments;
+        seg_start = i + 1;
+    }
+
+    return segments >= 2 && segments <= 8;
 }
 
 // WebView2 profile partition per plugin. Manifest ids are lowercase
@@ -206,7 +212,7 @@ wv::Status PluginHost::register_api(const std::string& method, const jb::ApiDesc
 
     if (!is_valid_api_method(method))
     {
-        return invalid_argument("method must match ^[a-z0-9_]+\\.[a-z0-9_]+$: " + method);
+        return invalid_argument("method must match ^[a-zA-Z0-9_]+(\\.[a-zA-Z0-9_]+){1,7}$: " + method);
     }
     if (method.rfind("_orca.", 0) == 0)
     {

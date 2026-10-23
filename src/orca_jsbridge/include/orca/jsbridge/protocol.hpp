@@ -41,7 +41,7 @@ struct Frame
 {
     std::string type;    // "call" | "result" | "event"
     std::string id;      // "c17" style; empty for events
-    std::string method;  // call only, "module.method"
+    std::string method;  // call only, dot-separated namespace path, 2-8 segments
     std::string event;   // event only
     Json         params;         // call only
     bool         ok = false;     // result only

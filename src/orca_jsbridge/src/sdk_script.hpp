@@ -13,7 +13,8 @@ namespace orca::jb::detail {
 // sdk/orca_sdk.js by cmake/EmbedJs.cmake.
 extern const char kSdkInitScript[];
 
-// ^[a-z0-9_]+\.[a-z0-9_]+$ validation without pulling <regex> into the DLL.
+// ^[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+){1,7}$ validation without pulling <regex>
+// into the DLL.
 bool valid_method_name(const std::string& name);
 
 } // namespace orca::jb::detail
