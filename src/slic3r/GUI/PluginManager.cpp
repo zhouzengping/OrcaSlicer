@@ -475,9 +475,9 @@ void PluginManager::register_center_apis(orca::jb::Bridge* bridge)
     orca::jb::ApiDesc plugin_open;
     // Async by contract: opening runs a modal permission prompt and creates a
     // window plus a webview controller.
-    plugin_open.async = [](const orca::jb::Json& params, orca::jb::Responder responder)
+    plugin_open.async = [this](const orca::jb::Json& params, orca::jb::Responder responder)
     {
-        wxTheApp->CallAfter([params, responder]() mutable
+        wxTheApp->CallAfter([this, params, responder]() mutable
         {
             MainFrame* frame = wxGetApp().mainframe;
             if (!frame)
@@ -494,7 +494,10 @@ void PluginManager::register_center_apis(orca::jb::Bridge* bridge)
             }
 
             if (!frame->open_plugin_tab(plugin_id))
-                responder.send_result(orca::jb::Json{{"ok", false}, {"error", "failed to open plugin"}});
+                // "reason" carries the machine-readable failure cause recorded
+                // by open_plugin (permission refusal vs load failure) so the
+                // center page can toast a localized, cause-specific message.
+                responder.send_result(orca::jb::Json{{"ok", false}, {"error", "failed to open plugin"}, {"reason", m_last_open_reason}});
             else
                 responder.send_result(orca::jb::Json{{"ok", true}});
         });
@@ -577,6 +580,10 @@ orca::plugin::PluginHost* PluginManager::ensure_host()
 
 std::shared_ptr<PluginTabPage> PluginManager::open_plugin(const std::string& plugin_id, wxWindow* tab_parent)
 {
+    // Cleared at entry, set on every failure exit below; the plugin.open
+    // handler reports it to the center page as the reply's "reason" field.
+    m_last_open_reason.clear();
+
     orca::plugin::PluginHost* host = ensure_host();
     if (!host || !tab_parent || plugin_id.empty())
         return nullptr;
@@ -588,14 +595,17 @@ std::shared_ptr<PluginTabPage> PluginManager::open_plugin(const std::string& plu
     const auto manifest = orca::plugin::PluginManifest::load_from_file(manifest_path.string());
     if (!manifest)
     {
+        m_last_open_reason = "load_failed";
         BOOST_LOG_TRIVIAL(error) << "PluginManager: manifest load failed for " << plugin_id << ": " << manifest.status.message;
         return nullptr;
     }
 
-    if (!prompt_plugin_permissions(manifest.value, tab_parent))
+    bool denial_was_persisted = false;
+    if (!prompt_plugin_permissions(manifest.value, tab_parent, denial_was_persisted))
     {
         // Clean deny: a plugin whose requested permission was refused (now or
         // on an earlier open - refusals are persisted) never opens.
+        m_last_open_reason = denial_was_persisted ? "already_denied" : "permission_denied";
         BOOST_LOG_TRIVIAL(info) << "PluginManager: permission refused, not opening " << plugin_id;
         return nullptr;
     }
@@ -609,6 +619,7 @@ std::shared_ptr<PluginTabPage> PluginManager::open_plugin(const std::string& plu
         host->load(manifest_path.string(), tab->native_host_handle(), status);
     if (!session)
     {
+        m_last_open_reason = "load_failed";
         BOOST_LOG_TRIVIAL(error) << "PluginManager: plugin load failed for " << plugin_id << ": " << status.message;
         return nullptr;
     }
@@ -617,6 +628,7 @@ std::shared_ptr<PluginTabPage> PluginManager::open_plugin(const std::string& plu
     {
         // Unreachable in practice (the tab was just created empty); reclaim
         // the session so the host does not track a dangling plugin.
+        m_last_open_reason = "load_failed";
         host->unload(plugin_id);
         return nullptr;
     }
@@ -668,7 +680,7 @@ std::vector<std::string> PluginManager::installed_ids() const
     return ids;
 }
 
-bool PluginManager::prompt_plugin_permissions(const orca::plugin::PluginManifest& manifest, wxWindow* parent)
+bool PluginManager::prompt_plugin_permissions(const orca::plugin::PluginManifest& manifest, wxWindow* parent, bool& denial_was_persisted)
 {
     orca::plugin::PluginHost* host = ensure_host();
     if (!host)
@@ -688,7 +700,8 @@ bool PluginManager::prompt_plugin_permissions(const orca::plugin::PluginManifest
         if (state == orca::plugin::PermissionState::Denied)
         {
             // Persisted refusal from an earlier open: fail without re-asking.
-            denied = true;
+            denied                = true;
+            denial_was_persisted  = true;
             continue;
         }
         if (state == orca::plugin::PermissionState::Granted)

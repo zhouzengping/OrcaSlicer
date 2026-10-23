@@ -48,6 +48,8 @@ public:
     orca::plugin::PluginHost* ensure_host();
 
     // Permission prompt (unknown tags) -> PluginHost::load -> PluginTabPage.
+    // On failure records the machine-readable cause in m_last_open_reason
+    // (surfaced as the "reason" field of the plugin.open reply).
     std::shared_ptr<PluginTabPage> open_plugin(const std::string& plugin_id, wxWindow* tab_parent);
 
     // Release the session of a running plugin (tab teardown path).
@@ -63,8 +65,10 @@ private:
      * are visible to the session policy. Returns false when any requested
      * tag is refused (now or persisted earlier): the open must fail cleanly
      * and refusals are recorded so they are not re-asked.
+     * denial_was_persisted tells a refusal recorded by an earlier prompt
+     * apart from a fresh No clicked in this prompt.
      */
-    bool prompt_plugin_permissions(const orca::plugin::PluginManifest& manifest, wxWindow* parent);
+    bool prompt_plugin_permissions(const orca::plugin::PluginManifest& manifest, wxWindow* parent, bool& denial_was_persisted);
 
     /*
      * Install a plugin from a picked path into <plugins_root>/<manifest id>/.
@@ -76,6 +80,15 @@ private:
     std::unique_ptr<orca::plugin::PluginHost> m_host;
     std::string                               m_plugins_root;
     std::string                               m_permission_store_path;
+
+    /*
+     * Failure cause of the last open_plugin call, read by the plugin.open
+     * handler to fill the reply's "reason" field: "" on success or when no
+     * specific cause was recorded, otherwise "permission_denied" (fresh No
+     * in the permission prompt), "already_denied" (persisted refusal) or
+     * "load_failed" (manifest invalid or host load failed).
+     */
+    std::string                               m_last_open_reason;
 };
 
 } // GUI

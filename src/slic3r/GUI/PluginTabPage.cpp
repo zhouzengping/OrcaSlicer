@@ -41,5 +41,18 @@ void* PluginTabPage::native_host_handle() const
     return WebViewPageBase::native_host_handle();
 }
 
+void PluginTabPage::notify_page_state(const std::string& state)
+{
+    // Deliberately not calling the base implementation: its no-bridge
+    // fallback routes to the legacy SSWCP subscribers, which a plugin page
+    // never has. The session bridge is the page's only event channel.
+    if (!m_session)
+        return;
+
+    const std::shared_ptr<orca::jb::Bridge> bridge = m_session->bridge();
+    if (bridge)
+        bridge->emit("page.state", orca::jb::Json{{"state", state}});
+}
+
 } // GUI
 } // Slic3r

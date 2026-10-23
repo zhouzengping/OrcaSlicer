@@ -42,6 +42,8 @@ const STRINGS = {
         toast_remove_ok: '插件已删除',
         toast_install_ok: '示例插件已安装',
         toast_open_ok: '插件已打开',
+        toast_open_denied: '已拒绝该插件的权限请求，如需重新授权请先删除再安装',
+        toast_open_failed: '插件打开失败',
         toast_close_ok: '插件已关闭'
     },
     'en-US': {
@@ -70,6 +72,8 @@ const STRINGS = {
         toast_remove_ok: 'Plugin removed',
         toast_install_ok: 'Sample plugin installed',
         toast_open_ok: 'Plugin opened',
+        toast_open_denied: 'Permission request denied; remove and reinstall to be asked again',
+        toast_open_failed: 'Failed to open the plugin',
         toast_close_ok: 'Plugin closed'
     }
 };
@@ -388,6 +392,26 @@ function errorText(err) {
     return (err && err.message) ? err.message : String(err);
 }
 
+/*
+ * Localized toast text for a failed wire action. Only plugin.open replies
+ * carry a machine-readable "reason" today (permission refusal vs load
+ * failure, set by the C++ handler); both denial variants share one message
+ * because a fresh No is persisted just like an earlier refusal. Actions and
+ * replies without a known reason keep the host-provided error text.
+ */
+const REASON_TOAST_KEYS = {
+    permission_denied: 'toast_open_denied',
+    already_denied: 'toast_open_denied',
+    load_failed: 'toast_open_failed'
+};
+
+function failureText(res) {
+    if (res && typeof res.reason === 'string' && REASON_TOAST_KEYS[res.reason]) {
+        return t(REASON_TOAST_KEYS[res.reason]);
+    }
+    return (res && res.error) ? res.error : t('err_generic');
+}
+
 // Runs one wire action, toasts failures, refreshes the list on success. The
 // triggering button is disabled while the call is in flight so a double click
 // cannot fire the action twice.
@@ -407,7 +431,7 @@ async function callAction(method, params, okKey, btn) {
             }
             refreshList();
         } else {
-            toast((res && res.error) ? res.error : t('err_generic'), 'err');
+            toast(failureText(res), 'err');
         }
     } catch (err) {
         toast(errorText(err), 'err');

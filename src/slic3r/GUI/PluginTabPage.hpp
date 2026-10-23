@@ -41,6 +41,13 @@ public:
 
     bool wants_generic_page_state() const override { return true; }
 
+    /*
+     * Forward "active"/"inactive" to the session bridge so the hosted page's
+     * orca.on('page.state') subscription fires; the base fallback (legacy
+     * SSWCP subscriber notify) has no subscriber for a plugin page.
+     */
+    void notify_page_state(const std::string& state) override;
+
 private:
     std::string                            m_plugin_id;
     std::shared_ptr<orca::plugin::PluginSession> m_session;

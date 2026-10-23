@@ -43,7 +43,7 @@ public:
     orca::wv::WebView* view() const { return m_view.get(); }
 
     // "active" / "inactive" notifications for tab switches.
-    void notify_page_state(const std::string& state);
+    virtual void notify_page_state(const std::string& state);
     // Flutter hosts keep the legacy tpHome / tpMonitor notify branch instead.
     virtual bool wants_generic_page_state() const { return false; }
 

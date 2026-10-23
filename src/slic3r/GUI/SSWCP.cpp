@@ -7774,8 +7774,7 @@ std::unordered_map<std::string, int> SSWCP::m_tab_map = {
     {"Project", MainFrame::TabPosition::tpProject},
     {"Calibration", MainFrame::TabPosition::tpCalibration},
     {"Auxiliary", MainFrame::TabPosition::tpAuxiliary},
-    {"DebugTool", MainFrame::TabPosition::toDebugTool},
-    {"PluginCenter", MainFrame::TabPosition::tpPluginCenter}
+    {"DebugTool", MainFrame::TabPosition::toDebugTool}
 };
 
 std::unordered_set<std::string> SSWCP::m_machine_find_cmd_list = {
