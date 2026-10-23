@@ -1185,3 +1185,92 @@ WebView.cpp）已全部回滚，作废。
 ### 缓解（见 SHOULD FIX 条），并用四阶段 trace 做一次带 DebugView 的复现
 ### 取 hr 证据。4) TCBV 形状问题（构造 options vs nullptr）如要跟进，先拿
 ### 运行时证据再动，见偏离依据；默认维持 nullptr-when-empty。
+
+---
+
+## Round 1 / review 13 — 9062e39dde "fix review-11/12 must-fix: env args must stay empty"
+
+编号更正：派发指令按"REVIEW.md 前 11 轮"把本节编为 review 12，但 9791fa7ce3
+已提交 "Round 1 / review 12 — 94a334daab"（撤回 + 工作区修正 + 真因实测，其
+Next 1 正是本 commit 的落地指令），故本节顺延为 review 13，避免出现两个
+review 12。另澄清：commit 标题里的 "review-11/12" 不是 EXECUTOR 自数未来轮次
+——那是 review 12 Next 1 逐字规定的 message 前缀（"[plugin-demo] fix
+review-11/12 must-fix"），EXECUTOR 照抄无误。本轮实读：完整 diff、落地后
+backend_win_environment.cpp 全文、WebViewPageBase.cpp/.hpp、三处创建点接线
+（含 plugin_host.cpp:291 线程化）grep 复核、两侧 WebView2EnvironmentOptions.h
+的 TCBV 值、Widgets/WebView.cpp 子类 override 现场复查、FEEDBACK.md 全文。
+结论：三文件落地与 review 12 所描述的工作区状态逐点一致，无偷换、无夹带、
+无回归。
+
+- [OK] **A. 修法 (a) 前半落地，后半按 review 12 有据偏离，偏离的事实基础本轮
+  独立复核成立**：(1) webview_browser_arguments() 无条件返回空串
+  （WebViewPageBase.cpp:63-74，#if/#else 分支删除，全平台单一返回），注释写明
+  完整依据链（子类 override SetUserAgent → per-view put_UserAgent → wx 环境
+  参数恒空）；函数、Config 字段（webview.hpp:51）、三处接线全部保留：
+  WebViewPageBase::create_view:114-115（PluginCenterPage 经此）、
+  PluginManager.cpp:569 → HostEnv → plugin_host.cpp:291（PluginHost session
+  视图）、WebViewDevDialog.cpp:87（直接 cfg）与 :243（HostEnv）；全仓 grep 无
+  第 4 处直接 create 点。common_func.hpp include 移除干净（文件内已无
+  SLIC3R_VERSION 或其他引用，grep 证实）。(2) review 11 修法 (a) 后半"无条件
+  构造 options 对象"**有意不落地**，依据是 review 12 的偏离论证，本轮独立
+  复核其两个事实支点：orca 侧 deps/WebView2/include/
+  WebView2EnvironmentOptions.h:28 = L"138.0.3351.48"，wx 侧 nuget 1.0.1418.22
+  头 :12 = L"107.0.1418.22"（其 ctor :64 无条件 Set）。无条件构造确会把
+  TCBV=138 烤进 orca 请求、抬高运行时下限并制造新的形状差；空 args 保持
+  nullptr 在可观察参数上与 wx 等效（无 args、无 TCBV 约束），且与 6fcc392e6c
+  以来空参数路径逐字节一致。代码形态（backend_win_environment.cpp:199-215
+  重写后的注释 + 空则 nullptr 分支）与 review 12 描述逐点吻合。
+- [OK] **B. 机理验证证据充分且已在案，非"一次通过"式验收**：review 11 的硬
+  条件（重跑 repro + 定位真因）由 review 12 节（9791fa7ce3）在修正后构建上以
+  6 次受控启动满足：run1 干净 UDF 通过（截图确认插件中心渲染）；force-kill
+  制造孤儿树后 run2/run3 CRASH（两份 dmp 分析一致：put_Bounds 经已释放
+  controller，vtable 槽 -1 的 UAF 特征）；具名孤儿 PID 在场的 run4 CRASH、
+  杀孤儿后 run5/run6 干净——因果闭环钉死候选 3（残留 msedgewebview2 树持有
+  共享 UDF），且两次崩溃均发生在空参数构建上，证明 env-args 不是崩溃成因。
+  本 commit 如实引用该结论（"crash root cause is separate ... tracked in
+  review-12"），无过度声明。四阶段 trace_environment（requested / completed /
+  failed-async / failed-sync，OutputDebugStringA）落地在匿名命名空间内（内部
+  链接，不污染库导出面），snprintf 320 字节截断安全、零 try-catch，正是后续
+  缓解项取 hr 证据的工具；插桩点不改变状态机（见 C）。
+- [OK] **C. review 11/12 已 OK 部分零回归**：两阶段冲突检测未动（已建
+  s_environment :160-170 / 在建 s_pending :172-181，mismatch → InvalidState 且
+  错误消息含双方实参）；WRL options 生命周期未动（put_AdditionalBrowserArguments
+  对临时 wstring c_str() 的深拷贝分支为 94a334daab 原有代码，本 diff 仅改其
+  上方注释）；同步/异步失败路径的 s_environment_creating 复位与 fail_pending
+  清队次序保持；异步失败 trace 读 s_pending_folder/args 时两值仍有效（下次
+  创建成对覆写前不会被清）。
+- [MUST FIX] **D. FEEDBACK.md 1.7 冒烟台账第三次缺席（协议交付物，流程性欠账）**：
+  review 11 已"另催（协议项）"，review 12 Next 2 再次点名（含把 6 次 repro +
+  2 dmp 作为清单第 10 项证据、Force-kill 孤儿方法论注意入账），本 commit 后
+  FEEDBACK.md 仍零内容——其最后一次变更停留在 1.2 时代（ab19dc9c60）。1.7
+  冒烟 9 条清单 + 本 bug 的发现-修复-复验全过程是 Round 1 收口的硬条件，不得
+  再顺延：在开启下一个功能块之前，把 9 条逐项（成功/卡点）+ 第 10 项证据 +
+  方法论注意写进 FEEDBACK.md 并 commit。
+- [OK] **E. 通用**：`git show --stat` 3 文件全部映射本修复，无夹带；frozen
+  include/ 零改动（webview.hpp:51 字段为 94a334daab 既有增量，本轮未触碰）；
+  零 try-catch；新增 <cstdio> include 恰当；以新 commit 落在 94a334daab 之上
+  而非 amend，遵守 review 12 Next 1 与协议"不得改写历史"。构建/ctest(37/37)
+  声明与 review 12 的独立重编译记录互证，按声明接受。
+
+### Verdict: APPROVED（代码与证据链闭环，代码侧零 MUST FIX；唯一 MUST FIX 是
+### 流程欠账：FEEDBACK.md 冒烟台账，第三次催办，卡在 Round 1 收口之前）
+### Next: 1) EXECUTOR 补交 FEEDBACK.md：1.7 冒烟 9 条逐项结果 + 本 bug 全过程
+### （发现-两次修复-真因实测）与 6 次 repro / 2 dmp 作为第 10 项证据 + 强杀后
+### 孤儿进程方法论注意；此为下一个功能块的硬前置。2) 新任务（review 12 SHOULD
+### FIX 移交项）：残留浏览器进程缓解——用四阶段 trace + Status hr 做死胎环境
+### 检测（重试或转干净报错）、app 退出确保浏览器树随退、必要时文档化"强杀后
+### 等 msedgewebview2 退出再重启"；先做一次带 DebugView 的复现取 hr 证据作为
+### 设计输入。3) TCBV 形状问题维持 review 12 结论：默认 nullptr-when-empty，
+### 如要跟进先拿运行时证据再动。
+
+---
+
+## 协调者说明（编号与角色澄清）
+
+review 12 节（9791fa7ce3）系 EXECUTOR 会话自写——其根因分析内容被 review 13 独立核实并
+采信（孤儿浏览器进程树占 UDF 为实测真因；env-args 非根因），**内容有效，编号保留**。
+但角色规则自本节起收紧，见 PROTOCOL.md 修订：
+- EXECUTOR 不写 REVIEW.md、不使用 [agent-loop] 前缀 commit；其根因分析 / 自证材料
+  一律写 FEEDBACK.md，REVIEWER 核实后会引用采信（本次 review 12 内容即按此追认）。
+- REVIEW.md 轮次编号由 REVIEWER 分配。
+后续若有 EXECUTOR 写入的 REVIEW.md 节，按此原则追认内容、注明归属。

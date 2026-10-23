@@ -49,3 +49,6 @@
 - 代码风格对齐 `WebViewPageBase.cpp` 现有风格。
 - 任何一方不得 force push / rebase 已有 commit；不得修改对方 commit 的内容。
 - REVIEWER 只写本目录文件，不直接改 src/ 下的代码（除 delegate 场景）。
+- **角色边界**：REVIEW.md 与 `[agent-loop]` commit 前缀为 REVIEWER 专用。EXECUTOR 的
+  根因分析 / 自证材料（对照运行、dump 分析、复现记录等）写 FEEDBACK.md——REVIEWER
+  核实后引用采信，效力等同。EXECUTOR 不自设 REVIEW 轮次编号。
