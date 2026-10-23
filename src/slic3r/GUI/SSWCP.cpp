@@ -3,6 +3,7 @@
 #include "FilamentColorUtils.hpp"
 #include "GUI_App.hpp"
 #include "MainFrame.hpp"
+#include "PluginCenterPage.hpp"
 #include "DownloadManager.hpp"
 #include "Timelapse/TimelapseDownloadPopup.hpp"
 #include "nlohmann/json.hpp"
@@ -1125,13 +1126,22 @@ void SSWCP_Instance::sw_SwitchTab() {
 
         if (m_param_data.count("target")) {
             std::string target_tab = m_param_data["target"].get<std::string>();
-            if (SSWCP::m_tab_map.count(target_tab)) {
+            if (target_tab == "PluginCenter") {
+                // The TabPosition enum value does not match the runtime page order; select by page pointer instead.
+                MainFrame* mainframe = wxGetApp().mainframe;
+                if (mainframe && mainframe->m_plugin_center) {
+                    mainframe->select_tab(mainframe->m_plugin_center);
+                    send_to_js();
+                    finish_job();
+                    return;
+                }
+            } else if (SSWCP::m_tab_map.count(target_tab)) {
                 wxGetApp().mainframe->request_select_tab(MainFrame::TabPosition(SSWCP::m_tab_map[target_tab]));
                 send_to_js();
                 finish_job();
                 return;
             }
-        }        
+        }
         handle_general_fail();
     }
     catch (std::exception& e) {

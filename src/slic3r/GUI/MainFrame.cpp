@@ -1231,21 +1231,22 @@ void MainFrame::init_tabpanel() {
         // Generic page-state notifications for webview-based tabs that opt in
         // through wants_generic_page_state() (plugin center and plugin tabs).
         // The flutter pages keep the tpHome / tpMonitor branches above.
-        static WebViewPageBase* s_prev_web_page = nullptr;
+        // m_prev_web_page is a frame member, so a recreated frame starts from
+        // nullptr instead of pointing at a page of the destroyed frame.
         if (WebViewPageBase* web_page = dynamic_cast<WebViewPageBase*>(panel)) {
             if (web_page->wants_generic_page_state()) {
-                if (s_prev_web_page && s_prev_web_page != web_page)
-                    s_prev_web_page->notify_page_state("inactive");
+                if (m_prev_web_page && m_prev_web_page != web_page)
+                    m_prev_web_page->notify_page_state("inactive");
                 web_page->notify_page_state("active");
-                s_prev_web_page = web_page;
-            } else if (s_prev_web_page) {
+                m_prev_web_page = web_page;
+            } else if (m_prev_web_page) {
                 // Switched to a webview page that manages its own state.
-                s_prev_web_page->notify_page_state("inactive");
-                s_prev_web_page = nullptr;
+                m_prev_web_page->notify_page_state("inactive");
+                m_prev_web_page = nullptr;
             }
-        } else if (s_prev_web_page) {
-            s_prev_web_page->notify_page_state("inactive");
-            s_prev_web_page = nullptr;
+        } else if (m_prev_web_page) {
+            m_prev_web_page->notify_page_state("inactive");
+            m_prev_web_page = nullptr;
         }
 
         if (panel)

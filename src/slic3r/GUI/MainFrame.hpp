@@ -54,6 +54,7 @@ class MainFrame;
 class ParamsDialog;
 class PluginCenterPage;
 class PluginTabPage;
+class WebViewPageBase;
 
 enum QuickSlice
 {
@@ -407,6 +408,10 @@ public:
     // to the frame and never keeps it, so the map must hold it for the tab's
     // whole lifetime (releasing the last reference destroys the wx window).
     std::unordered_map<std::string, std::shared_ptr<PluginTabPage>> m_plugin_tabs;
+    // Per-frame last webview page notified as active; a member (not a static)
+    // ties the pointer to this frame's lifetime, so a recreated frame starts
+    // from nullptr and never dereferences a page of the destroyed one.
+    WebViewPageBase*      m_prev_web_page{ nullptr };
     wxLogWindow*          m_log_window { nullptr };
     // BBS
     //wxBookCtrlBase*       m_tabpanel { nullptr };
