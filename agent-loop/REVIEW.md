@@ -765,3 +765,104 @@ manifest.hpp/schema + validate_against_dir（icon 路径校验）。**无 MUST F
 ###    各走一遍。
 ### 8. 若 E1/E2 已落地：mac/linux 至少编译过（跨平台宣称的最低门槛），Windows
 ###    行为无变化。
+
+---
+
+## Round 1 / review 9 — ce4a7d9eac + c04fed175a "E1/E2/C1 framework fixes + review-7 must-fix"
+
+两 commit 一轮（框架修复 + must-fix 验收）。联动路径全部实读：backend_mac.mm /
+backend_gtk.cpp 现状全文、webview.cpp create/report_created 链、bridge.cpp
+on_url_changed→session.origin、backend_win.cpp SourceChanged 与 controller 完成回调
+（确认未被触碰）、GUI_App Fltviews::reload_all 三个调用点、WebGuideDialog、
+Notebook DoRemovePage 事件时序、MainFrame PAGE_CHANGED 处理器、SSWCP sw_SwitchTab、
+PluginCenterPage::reload_page、orca_webview/CMakeLists.txt 平台门。**全部验收通过，
+零 MUST FIX。**
+
+- [OK] **A. E1（mac origin）验收通过**。WKNavigationDelegate 补
+  `webView:didCommitNavigation:`（backend_mac.mm:407-413），读
+  `webView.URL.absoluteString` → `on_url_committed` → `m_proxy.report_url_changed`
+  （:328-331）；入口三重守卫（state 判空 / closed / backend 判空），与同文件
+  didReceiveScriptMessage/decidePolicy 同款。时机语义与 Windows 对齐成立：
+  didCommit 在新文档任何脚本（含 document-start init script 与页面 SDK hello）之前
+  发射 → 页面发起 hello 时 session.origin 必已更新，等价于 Win SourceChanged /
+  GTK notify::uri；下行走同一套追踪——bridge.cpp:275 的
+  `view->events().on_url_changed` → `session.origin = extract_origin(url)` →
+  origin_allowed 策略，插件会话与中心页（都经 attach）同时受益。custom scheme
+  导航同样触发 didCommit，`plugin-center://center/...` 提取出
+  `plugin-center://center` 与 allowed_origins[1] 精确匹配（review 6 已核字符串）。
+- [OK] **B. E2（deferred created）验收通过，无新竞态**。mac：start() 尾部
+  `dispatch_async(dispatch_get_main_queue(), ...)`（backend_mac.mm:156-170），block
+  持 `shared_ptr<MacSharedState>` 保活、raw proxy 仅在 `!closed` 时解引用——close()
+  在同一主线程先置 closed 再销毁 backend/Impl，run_script 的 completionHandler
+  （:259-274）即同一守卫模式；gtk：`g_idle_add` 一次性 idle（backend_gtk.cpp:
+  35-52, 191-198），unique_ptr 接管 payload（closed 早退路径也不泄漏），守卫同构。
+  **顺序保证**：main queue / GLib main context 只在当前同步调用栈（WebView::create
+  → 返回 → 宿主 attach_bridge + 挂 on_created） unwind 后才排水，宿主槽位必先于
+  report_created 生效——这正是修的 bug。**Windows 路径零影响**：backend_win.cpp
+  不在 diff 内，report_created 仍由异步 controller 完成回调发射，行为不变。
+  语义顺带核实：backend.h 内部契约本就写着 "start() kicks off asynchronous
+  creation and returns immediately; completion is reported through the
+  EventProxy"——旧 mac/gtk 同步发射其实违反它，本修复是回归契约。
+- [OK] **C. C1（reload wiring）验收通过**。`Fltviews::reload_all()` 尾部新增
+  `app->reload_plugin_center_page()`（GUI_App.hpp:1009-1013）→ 判 mainframe 与
+  m_plugin_center 非空后 `reload_page()`（GUI_App.cpp:4614-4622）。**覆盖三个
+  调用点**：guide（GUI_App.cpp:4066）、wizard（:7416）、web-guide
+  （WebGuideDialog.cpp:505，第三个是白捡的）。经 GUI_App 方法中转的理由成立
+  （GUI_App.hpp 里 MainFrame 仅前向声明，不能解引用成员）；GUI_App.cpp 补
+  PluginCenterPage.hpp include，编译绿。参数非硬编码：reload_page 经
+  get_international_url 现取 locale 与 dark_mode（review 6 已核每次调用现读），
+  is_ready() 守卫保留。
+- [OK] **D. review-7 MUST FIX 验收通过**。`s_prev_web_page` 函数级 static 改
+  MainFrame 成员 `m_prev_web_page{nullptr}`（MainFrame.hpp:411-414 类内初始化；
+  MainFrame.cpp:1234-1250 逻辑与原 static 版逐行等价），per-frame 生命周期，
+  recreate 后新帧从 nullptr 起步，不再依赖 select_tab/Destroy 跨文件顺序巧合；
+  全仓 grep 无 s_prev_web_page 残留。**帧内悬挂也走查了一遍**：关闭选中插件 tab
+  时 Notebook::DoRemovePage → DoSetSelectionAfterRemoval 同步发射
+  PAGE_CHANGED（Notebook.hpp:372-382，wx 同步 HandleWindowEvent），此刻页面窗口
+  仍存活（销毁在 close_plugin_tab 后续的 map erase），处理器先把 m_prev_web_page
+  重置到新选中页/null 再放行——帧内无悬挂窗口。`prev_monitored_tab` int static
+  属存量豁免（review 7 已裁），保留正确。
+- [OK] **E. riders 验收（c04fed175a 载的是 review-7 两条 SHOULD FIX，均兑现）**：
+  (1) sw_SwitchTab 对 "PluginCenter" 特判（SSWCP.cpp:1129-1137）→
+  `select_tab(wxPanel*)` FindPage 寻址（MainFrame.cpp:3675-3692），frame/page
+  缺失走 handle_general_fail 正常失败语义；SSWCP.cpp 补 PluginCenterPage.hpp
+  include（upcast 需完整类型）。(2) m_pageClosable 全仓删净（grep 零残留），
+  closable 行为由 InsertPage 的按钮绑定闭包继续承载（Notebook.cpp:204-220），
+  1.5 行为无回归。**review-8 两条 SHOULD FIX（PluginTabPage page.state 死线、
+  open 被拒 toast 区分+本地化）两 commit 均未包含 → 结转**（见 Next，不扣分）。
+- [OK] **F. frozen 契约检查通过（关键项）**。`git show ce4a7d9eac --stat`：仅
+  backend_gtk.cpp / backend_mac.mm（实现层）+ GUI_App 两文件；`git diff
+  6fcc392e6c..c04fed175a -- src/orca_webview/` 全历史仅这两个 .mm/.cpp，
+  **include/ 三库公共头零改动**；orca_jsbridge 自 6fcc392e6c 零改动；
+  orca_plugin_host 仅 plugin_host.hpp +8（permission_store() 访问器，review 3
+  预告、review 5 验收过的预期内小改，非本 commit）。行为变化不违约反而在履约：
+  webview.hpp:54-55 "Wire them immediately after create() returns, while state
+  is still Creating, to not miss on_created" 在 mac/gtk 上从假话变真话；
+  on_url_changed 注释声明的 "origin tracking; consumed by jsbridge" 落地；
+  backend 公共接口（backend.h 方法集）未动。样本检查 on_created 语义亦无矛盾
+  （无任何头文件承诺 created 在 create() 内同步发射）。
+- [SHOULD FIX] **m_tab_map 残留死条目**："PluginCenter" 仍在 SSWCP::m_tab_map
+  （SSWCP.cpp:7778），但特判分支先于 map 查找拦截，该条目永远不会被走到——
+  留着会诱导后人以为 map 路径可用（tpPluginCenter=9 裸索引越界）。随下一个
+  commit 删掉这一行即可。
+- [OK] 通用：两 diff 零 try-catch（sw_SwitchTab 的 try 属存量）；零新 stub；
+  各自范围聚焦（框架修复 4 文件 / must-fix+riders 5 文件，无夹带）；工作区
+  clean，无 1.7 半成品；Windows 构建自证（//m:1 绿，backend 两文件被
+  CMakeLists 平台门挡在 Windows 构建外，src/orca_webview/CMakeLists.txt:13-39
+  核实——"read-through verified" 的说法诚实）。备注（不要求改）：(a) mac E1 用
+  didCommit 时刻的 `webView.URL`，属标准写法，但个别 macOS 版本有 URL 滞后于
+  didCommit 的历史怪癖——mac 真机 bring-up 时验证一下，若滞后改缓存
+  decidePolicy 的 navigationAction.request.URL；(b) mac/linux 侧一切结论同为
+  read-through，编译验证只能等对应平台（正是冒烟清单第 8 条的最低门槛）。
+
+### Verdict: APPROVED — review-6 E1/E2/C1 与 review-7 MUST FIX 全部验收通过；
+### review-7 的 NEEDS CHANGES 就此解除，1.7 前置硬条件全部清空
+### Next: **放行 1.7 冒烟**。按 review 8 汇总的 8 条清单逐项执行，结果（成功/
+### 卡点）写进 FEEDBACK.md 并 commit；清单第 8 条的最低门槛即"mac/linux 至少
+### 编译过"——本 commit 后 mac/linux 的 origin/created 行为真机验证仍空缺，
+### 编译通过即可，运行时验证登记为 mac bring-up 项。**结转事项（建议冒烟前
+### 用一个小 commit 落地，非阻塞）**：(1) review-8 E2：PluginTabPage 加
+### notify_page_state override 经 `m_session->bridge()->emit("page.state", ...)`
+### 转发（PluginSession 已暴露 bridge()），落地后冒烟第 6 条追加"切走再切回
+### sample 页自动刷新"；(2) review-8 C3：plugin.open 失败原因区分（权限拒/
+### 加载失败）+ 中心页本地化 toast 键；(3) 本轮 m_tab_map 死条目删除。
