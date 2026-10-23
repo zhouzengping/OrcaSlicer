@@ -866,3 +866,92 @@ PluginCenterPage::reload_page、orca_webview/CMakeLists.txt 平台门。**全部
 ### 转发（PluginSession 已暴露 bridge()），落地后冒烟第 6 条追加"切走再切回
 ### sample 页自动刷新"；(2) review-8 C3：plugin.open 失败原因区分（权限拒/
 ### 加载失败）+ 中心页本地化 toast 键；(3) 本轮 m_tab_map 死条目删除。
+
+---
+
+## Round 1 / review 10 — 406b30f378 "carry-over fixes"
+
+专项验收轮：review-8 两条 SHOULD FIX（E2 page.state 死线 / C3 open 失败原因）+
+review-9 一条（m_tab_map 死条目）。联动路径全部实读：MainFrame PAGE_CHANGED
+处理器（virtual 派发点）、WebViewPageBase::notify_page_state 基类实现、
+PluginSession::bridge()/close()（plugin_host.cpp:144-160，detach 不置空）、
+Bridge::emit → BridgeCore::post（bridge.cpp:45-51, 368-371）、encode_event
+（protocol.cpp:228-236）、SDK recv/dispatchEvent（orca_sdk.js:101-119）、
+sample 页与中心页的 page.state 订阅、open_plugin 全部失败出口、
+prompt_plugin_permissions 全文、MainFrame::open_plugin_tab/close_plugin_tab、
+sw_SwitchTab 特判与 m_tab_map 唯一消费点。**三条全部验收通过，零 MUST FIX、
+零 SHOULD FIX。**
+
+- [OK] **A. page.state 死线修复（review-8 E2）验收通过**。PluginTabPage 增加
+  notify_page_state override（PluginTabPage.cpp:44-55）经
+  `m_session->bridge()->emit("page.state", {{"state", state}})` 转发——正是
+  review-8 建议的修法。**派发正确性**：基类方法改 virtual
+  （WebViewPageBase.hpp:46）是必要且正确的——MainFrame 处理器全部经
+  `WebViewPageBase*` 调用（MainFrame.cpp:1239/1240/1244/1248，全仓无其他
+  调用点），此前静态绑定永远进不了 override；改 virtual 对其余子类零影响
+  （全仓唯一 override 就是 PluginTabPage，PluginCenterPage 走原基类实现，
+  行为逐字节不变）。**wire 匹配逐环核实**：encode_event 产出
+  `{orca:1,type:"event",event:"page.state",data:{state:...}}` → SDK recv 的
+  `dispatchEvent(frame.event, frame.data)`（orca_sdk.js:115-116）→ sample 页
+  `e.state === 'active'`（sample index.html:318-321）与中心页同款
+  （app.js:550）——事件名与负载结构完全对上。**降级路径安全**：!m_session /
+  bridge 为空时静默返回——两条都不可达（tab 进 notebook 前 session 必已
+  adopt，AddPage 只在 open_plugin 成功后），且等价于基类 SSWCP fallback 对
+  插件页的 no-op；bridge 已 detach 时 emit 经 BridgeCore::post 返回
+  InvalidState 状态（bridge.cpp:47-48），不崩、不误导。**时序走查**：中键关
+  插件 tab 时 RemovePage 同步触发 PAGE_CHANGED → notify("inactive") 此刻
+  session 尚未 unload（close_plugin 在 RemovePage 之后，MainFrame.cpp:3752-
+  3759），emit 安全；帧发向仍存活的 webview，随后 session 关闭，无 UAF。
+  基类 virtual 化只动应用层 WebViewPageBase.hpp，三库公共头零改动（延续
+  review-9 F 的冻结检查）。
+- [OK] **B. open 失败原因区分 + 本地化（review-8 C3）验收通过**。
+  **C++ 侧**：open_plugin 入口 clear、四个 nullptr 出口全部落因——manifest
+  无效/host load 失败/adopt 失败 → "load_failed"（PluginManager.cpp:598/622/
+  631），权限拒 → "permission_denied"（本次弹窗点 No）或 "already_denied"
+  （持久化拒录，denial_was_persisted 出参在 prompt 内只在 store 命中
+  Persisted-Denied 分支置位，:705-709，语义准确）；handler 在同一 UI 线程
+  同步调用链上读 m_last_open_reason（open_plugin_tab → open_plugin 同帧完成），
+  无竞态。"已运行"不算失败（幂等 select → ok:true），无需原因，与契约一致。
+  wire 变化纯增量（"error" 保留英文原文，追加 "reason" 字段），中心页是唯一
+  消费方且同 commit 更新。**前端**：REASON_TOAST_KEYS 把三个 reason 映射到
+  两个新键（app.js:401-412），permission_denied/already_denied 共用
+  toast_open_denied——合理，两个 denial 变体用户行动一致（删了重装），
+  注释写明理由；未知 reason / 无 reason 回落 res.error → err_generic，
+  其他动作（import/remove/close）文案不受影响（callAction 仅失败分支换用
+  failureText，:434）。**本地化**：zh/en 两表各 28 键、逐键 lockstep
+  （脚本计数验证，28/28 无单侧键）；中文文案如实描述恢复路径（"先删除再
+  安装"与 remove → revoke_all 行为一致，review-7 G 已验）。英文笼统直出
+  问题解决。
+- [OK] **C. m_tab_map 死条目删除（review-9）验收通过，无回归**。"PluginCenter"
+  条目删除后，sw_SwitchTab 的 `if (target_tab == "PluginCenter")` 特判
+  （SSWCP.cpp:1129-1137）位于 `else if (m_tab_map.count(...))`（:1138）之前
+  ——该字符串永远到不了 map 查找，删除被遮蔽条目对运行时行为零影响。
+  m_tab_map 全仓唯一消费点就是 :1138-1139；全文件 grep "PluginCenter" 仅剩
+  include（:6，特判里 upcast 需要完整类型）与特判本身，无其他引用。存量
+  八个条目（legacy 字符串）未动。特判缺 frame/center 时经 handle_general_fail
+  正常失败语义保留（review-9 已验，本 commit 未触碰该分支）。
+- [OK] **D. 通用**：diff 零 try-catch、零新 stub；`git show --stat` 7 文件
+  全部映射到三条结转事项 + 派发所必需的基类 virtual（应用层），无夹带；
+  风格与各文件既有惯例一致（对齐赋值、理由注释、m_last_open_reason 成员
+  注释完整）；工作区 clean（无 1.7 冒烟半成品混入），HEAD 即本 commit；
+  构建自证（commit message "Build verified: //m:1 green, dll relinked"）。
+- 备注（不要求改）：(a) m_last_open_reason 有两个理论上的报告盲区——
+  open_plugin_tab 在调用 open_plugin **之前**失败（`!m_tabpanel`，此时读到
+  上一次的旧 reason）与 AddPage 失败回收路径（open 成功后 reason=""，回落
+  英文 "failed to open plugin"）；两条在当前调用链均不可达（handler 已前置
+  拦截空 id；frame 存在则 tabpanel 必在），接受现状。(b) plugin_open handler
+  本次开始捕获 this（PluginManager）——与 import/install_sample 既有模式
+  同险（review-5 备注 (a) 已裁接受的 CallAfter-在-shutdown-后悬垂窗口），
+  非新级别风险。(c) 混合拒绝（一个 tag 持久化拒 + 另一个本次点 No）报
+  already_denied——前端两键共用一个 toast，用户可见行为无差，注释已声明
+  该取舍。
+
+### Verdict: APPROVED — review-8 E2/C3 与 review-9 死条目三条全部验收通过，
+### Round 1 代码侧结转事项清零
+### Next: **1.7 冒烟即刻执行**：按 review 8 汇总的 8 条清单逐项跑（MSVC 构建
+### 无新警告；legacy sw_* 回包；权限链全走包括点 No 的中心页 toast 文案区分；
+### 白屏回归；中心页全链 locale/dark_mode；UI 状态机；生命周期 recreate；mac/
+### linux 编译门槛），外加本轮落地后新增的第 9 项：**切走再切回 sample 插件
+### tab 自动刷新**（page.state active → sample 页 orca.filament.list 重拉），
+### 以及中心页 open 被拒时中文界面出中文 toast（不再是英文直出）。结果
+### （成功/卡点）逐项写进 FEEDBACK.md 并 commit。
