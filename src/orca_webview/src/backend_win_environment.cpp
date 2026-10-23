@@ -226,7 +226,11 @@ void acquire_shared_environment(const std::string& browser_data_dir, const std::
             }
 
             trace_environment("create completed", "folder='" + s_pending_folder + "'");
-            s_environment = environment; // keep the callback's reference as the process cache
+            // The callback parameter is a borrowed reference; the cache must own
+            // its count for the process lifetime so the runtime cannot free the
+            // environment under every consumer of the cache.
+            environment->AddRef();
+            s_environment = environment;
             s_environment_folder = s_pending_folder;
             s_environment_args = s_pending_args;
             std::vector<EnvironmentReadyFn> requests = std::move(s_pending_requests);

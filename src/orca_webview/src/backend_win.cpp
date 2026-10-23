@@ -390,8 +390,8 @@ private:
             {
                 if (state->closed)
                 {
-                    if (controller != nullptr)
-                        controller->Release();
+                    // The callback parameter is only borrowed; releasing it here
+                    // would decrement the runtime's count, not ours. Just drop it.
                     return;
                 }
                 on_controller_created(errorCode, controller);
@@ -406,7 +406,12 @@ private:
             return;
         }
 
-        m_controller = controller; // takes over the handler's reference
+        // The callback parameter is a borrowed reference: the runtime may drop
+        // its own references at any time (parent window teardown, environment
+        // shutdown), which would free the controller behind our back. Hold our
+        // own count; close() releases it.
+        controller->AddRef();
+        m_controller = controller;
 
         ICoreWebView2* core = nullptr;
         if (FAILED(m_controller->get_CoreWebView2(&core)) || core == nullptr)
