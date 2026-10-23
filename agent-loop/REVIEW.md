@@ -1274,3 +1274,70 @@ review 12 节（9791fa7ce3）系 EXECUTOR 会话自写——其根因分析内�
   一律写 FEEDBACK.md，REVIEWER 核实后会引用采信（本次 review 12 内容即按此追认）。
 - REVIEW.md 轮次编号由 REVIEWER 分配。
 后续若有 EXECUTOR 写入的 REVIEW.md 节，按此原则追认内容、注明归属。
+
+---
+
+## Round 1 / review 14 — 5656980d94 "fix dangling COM refs: borrowed callback params must be AddRef'd"
+
+本轮实读：完整 diff、改后 backend_win.cpp 全文、改后 backend_win_environment.cpp
+全文、SDK 头 IDL 参数方向声明（deps/WebView2/include/WebView2.h:40308-40312 环境
+完成、:40620-40624 controller 完成）、wx 同场景用法（deps wx webview_edge.cpp
+:368-378 + private/webview_edge.h:49-51）、backend_mac.mm / backend_gtk.cpp 同类
+扫描、三库 COM 指针存储点 grep。独立复验：orca_webview 重编译零错误、
+ctest -R ^orca_ 37/37。**结论：三处修复语义全部正确、配平完备、同类点清零，
+APPROVED 零 findings。**
+
+**前提核实（决定性证据）**：两个 completion handler 的 result 参数在 SDK IDL
+里均为 **[in]** 而非 [out]——WebView2.h:40622 `/* [in] */ ICoreWebView2Controller
+*result`、:40311 `/* [in] */ ICoreWebView2Environment *result`。[in] 接口指针不
+转移所有权：接收方想持有必须自己 AddRef。与四份 dmp 法证互为印证（旧代码按
+out-param 惯例看是配平的，仍 UAF ⇒ 惯例假设错误 ⇒ 参数确实只借用）。wx 同
+场景同一模型：`m_webViewController = webViewController`（wxCOMPtr 赋值自带
+AddRef）+ 从不 Release 原参数；环境侧 QueryInterface 进 wxCOMPtr 同理。
+
+- [OK] **改动 1：on_controller_created 存前 AddRef（backend_win.cpp:409-413）**
+  与 close() 的 Release（m_closed 单次门）配平。store 后的失败路径
+  （get_CoreWebView2 失败、configure_core 失败）都保留 m_controller 已存状态，
+  交由 eventual close() 释放——无泄漏无悬挂；异步失败（errorCode≠0 /
+  controller==nullptr）不 store 亦无需释放。
+- [OK] **改动 2：state->closed 早退不再 Release（:390-394）**。参数借用，旧
+  Release 扣的是运行时侧计数（过度释放，理论上可在回调内当场释放对象）；
+  现在不持有计数故不释放，语义正确且无泄漏。
+- [OK] **改动 3：进程缓存入口 AddRef（backend_win_environment.cpp:229-233）**。
+  此前缓存裸存借用指针、自身零计数：一旦全部消费者归还 +1（所有视图都
+  close）环境即可被释放，s_environment 悬挂 → 下次 cache-hit 对已释放对象
+  AddRef——与 controller 完全同类的潜伏 UAF，只是尚未踩到。现在 +1 进程
+  终身持有，与 :72 "never released" 既有注释一致。
+- [OK] **配平全路径复核（close/dtor/fail/缓存 handing-out）**：缓存命中路径
+  :167 与排队路径 :240 的每消费者 AddRef 均为既有代码（本 commit 之前
+  `git show 5656980d94^` 证实）⇒ BackendWin::m_environment 一直是 owned
+  （"owns the AddRef'd reference" 注释成立），close() 的 env Release、
+  on_environment_ready 失败路径 Release、start() 早退 Release 三处均配平。
+  m_core 来自 get_CoreWebView2（IDL [retval][out] :36188-36190，被调用方
+  AddRef）owned，close() 释放配平。WRL Make→Detach→Release、handler
+  new(refs=1)→调用后 Release 均未动、依旧配平。
+- [OK] **同类点扫描（backend 全文 + 三库 grep）**：backend_win.cpp 仅存
+  m_environment / m_controller / m_core 三个 COM 指针（现全部 owned）；事件
+  EventHandler / ScriptCompletedHandler 的 sender/args 在 Invoke 作用域内用完
+  即弃、不存储；backend_mac.mm 的 m_webview 为 alloc-init 自有引用，无
+  completion 交付物存储；backend_gtk.cpp g_object_new+ref_sink 自有且创建
+  同步；jsbridge / plugin_host 不触 COM。**无残留同类点**。
+- [OK] **通用**：2 文件 Windows 门内、零 try-catch、英文注释、最小 diff；
+  commit 叙述的"修复后运行时侧拆除降级为普通 HRESULT 失败"由 COM 计数机制
+  成立（自有 +1 保证对象活到 close()；浏览器侧死亡时代理调用返回错误码而非
+  野跳）。构建与测试声明与本轮独立复验一致。
+- **勘正（按派发指令登记）**：review 12 SHOULD-FIX 的"真因已实测钉死 =
+  残留浏览器进程持有共享 UDF"表述由本 commit 的四 dmp 收敛分析修正——
+  孤儿-UDF / 浏览器侧死亡 / 父窗口拆除等是**触发器**（真实失败来源，缓解
+  仍值得做），崩与不崩的决定因素是**借用指针未计数**。review 12 的缓解方向
+  （死胎检测、退出随退、强杀后孤儿方法论）作为失败来源加固继续有效，按
+  review 13 Next 2 移交不变。
+
+### Verdict: APPROVED（零 findings：三处 AddRef/Release 配平完备、同类点清零，
+### [in] 借用前提有 IDL + dmp + wx 用法三重证据；构建与 ctest 由本轮独立复验）
+### Next: 1) FEEDBACK.md 1.7 冒烟台账 + 本 bug 全过程仍缺席（review 13 Next 1
+### 的硬前置，第 3 次催）——本 commit 的两路径多轮复验数据（点 Plugins tab /
+### 优雅退出，零新 dmp 零孤儿）应一并入账。2) review 13 Next 2（残留浏览器
+### 进程缓解）维持移交；设计输入补一条：修复后触发器只表现为干净失败 /
+### HRESULT，四阶段 trace 采证以 trace+hr 为准，不必再以崩溃为信号。
+### 3) 无其他遗留。
