@@ -32,6 +32,25 @@ struct ScriptCallbackData
     ScriptDoneFn                 callback;
 };
 
+// One-shot idle payload for the deferred report_created (see BackendGtk::start).
+struct CreatedIdleData
+{
+    std::shared_ptr<SharedState> state;
+    EventProxy*                  proxy;
+};
+
+gboolean on_created_idle(gpointer user_data)
+{
+    std::unique_ptr<CreatedIdleData> data(static_cast<CreatedIdleData*>(user_data));
+    // The closed flag guards the raw proxy pointer: close() flips it on the
+    // same (UI) thread before this backend, and with it the proxy's owner,
+    // can be destroyed.
+    if (data->state->closed)
+        return G_SOURCE_REMOVE;
+    data->proxy->report_created();
+    return G_SOURCE_REMOVE;
+}
+
 struct MimeEntry
 {
     const char* ext;
@@ -169,7 +188,13 @@ public:
         g_signal_connect(m_webview, "decide-policy", G_CALLBACK(on_decide_policy), this);
         g_signal_connect(m_webview, "create", G_CALLBACK(on_create), this);
 
-        m_proxy.report_created();
+        // Defer report_created until start() has returned: hosts wire
+        // events().on_created only after WebView::create comes back, so a
+        // synchronous report would always fire into an empty slot (Windows
+        // already reports from the async controller completion). The idle
+        // runs on the UI thread and fires once.
+        CreatedIdleData* data = new CreatedIdleData{m_state, &m_proxy};
+        g_idle_add(on_created_idle, data);
         return Status::make(Errc::Ok);
     }
 

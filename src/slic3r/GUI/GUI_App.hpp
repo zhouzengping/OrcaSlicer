@@ -763,6 +763,9 @@ private:
     void            open_publish_page_dialog();
     void            remove_mall_system_dialog();
     void            run_script(wxString js);
+    // Re-navigates the plugin center page with fresh locale / dark_mode.
+    // Defined in GUI_App.cpp: MainFrame is only forward-declared here.
+    void            reload_plugin_center_page();
     bool            is_adding_script_handler() { return m_adding_script_handler; }
     void            set_adding_script_handler(bool status) { m_adding_script_handler = status; }
 
@@ -1002,6 +1005,12 @@ public:
                 wxString new_url = app->get_international_url(prview.second.first);
                 ptr->load_url(new_url, prview.second.second);
             }
+
+            // The plugin center page lives on the new orca_webview stack,
+            // outside the legacy maps above; re-navigate it with the same
+            // fresh locale / dark_mode (guide / wizard reload path).
+            if (app != nullptr)
+                app->reload_plugin_center_page();
         }
     };
 

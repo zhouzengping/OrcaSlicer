@@ -90,6 +90,7 @@
 #include "3DScene.hpp"
 #include "MainFrame.hpp"
 #include "Plater.hpp"
+#include "PluginCenterPage.hpp"
 #include "PluginManager.hpp"
 #include "GLCanvas3D.hpp"
 #include "GeneratedConfig.hpp"
@@ -4608,6 +4609,16 @@ wxString GUI_App::get_international_url(const wxString& origin_url) {
                wxString::FromUTF8("&dark_mode=" + dark_mode);
     }
 
+}
+
+void GUI_App::reload_plugin_center_page() {
+    // Review 6 C1: Fltviews::reload_all() only knows the legacy webview maps;
+    // the plugin center page (new orca_webview stack) must re-navigate after
+    // locale / dark_mode changed (guide / wizard path; the language-switch path
+    // recreates the GUI instead). m_plugin_center stays null until the
+    // MainFrame tab is built.
+    if (mainframe != nullptr && mainframe->m_plugin_center != nullptr)
+        mainframe->m_plugin_center->reload_page();
 }
 
 bool GUI_App::is_user_login()

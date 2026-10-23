@@ -5,6 +5,7 @@
 
 #include <AppKit/AppKit.h>
 #include <WebKit/WebKit.h>
+#include <dispatch/dispatch.h>
 
 #include <memory>
 #include <string>
@@ -151,7 +152,22 @@ public:
 
         // TODO: config.color_scheme cannot be forced per view; WKWebView follows
         // the system appearance for prefers-color-scheme.
-        m_proxy.report_created();
+
+        // Defer report_created until start() has returned: hosts wire
+        // events().on_created only after WebView::create comes back, so a
+        // synchronous report would always fire into an empty slot (Windows
+        // already reports from the async controller completion). The block
+        // keeps the shared state alive and only dereferences the raw proxy
+        // pointer while the closed flag is still clear: close() flips it on
+        // the same (main) thread before this backend, and with it the proxy's
+        // owner, can be destroyed -- the same guard run_script uses.
+        std::shared_ptr<MacSharedState> state = m_state;
+        EventProxy*                     proxy = &m_proxy;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (state->closed)
+                return;
+            proxy->report_created();
+        });
         return Status::make(Errc::Ok);
     }
 
@@ -309,6 +325,11 @@ public:
         m_proxy.report_message(std::move(payload));
     }
 
+    void on_url_committed(std::string url)
+    {
+        m_proxy.report_url_changed(std::move(url));
+    }
+
     bool query_navigation(const NavigationState& navigation)
     {
         return m_proxy.query_navigation(navigation);
@@ -377,6 +398,18 @@ private:
     navigation.is_main_frame = navigationAction.targetFrame.mainFrame;
     decisionHandler(backend->query_navigation(navigation) ? WKNavigationActionPolicyAllow
                                                           : WKNavigationActionPolicyCancel);
+}
+
+// Track committed urls so the bridge can gate APIs by origin (session.origin
+// on the jsbridge side). didCommit fires before the new document's scripts
+// run, so an SDK hello sent from page scripts always sees the current origin
+// -- the analog of WebView2 SourceChanged / GTK notify::uri.
+- (void)webView:(WKWebView*)webView didCommitNavigation:(WKNavigation*)navigation
+{
+    if (state == nullptr || state->closed || backend == nullptr)
+        return;
+
+    backend->on_url_committed(orca::wv::detail::ns_to_utf8(webView.URL.absoluteString));
 }
 
 - (WKWebView*)webView:(WKWebView*)webView
