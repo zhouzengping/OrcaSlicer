@@ -20,6 +20,15 @@ namespace GUI {
 std::string webview_user_data_dir();
 
 /*
+ * AdditionalBrowserArguments matching the wx WebView2 environments created in
+ * this process ('--user-agent="..."' built exactly like
+ * WebView::CreateWebView does). WINDOWS ONLY: every environment sharing the
+ * user data folder must pass byte-identical arguments; snapshot taken once
+ * per process. Empty string on other platforms.
+ */
+std::string webview_browser_arguments();
+
+/*
  * Common host panel for web pages on the orca webview stack. Owns the native
  * view lifecycle (create / resize / close), always injects the legacy wx
  * postMessage shim so unmodified flutter pages keep working, registers the

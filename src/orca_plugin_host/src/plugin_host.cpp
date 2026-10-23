@@ -288,6 +288,7 @@ std::shared_ptr<PluginSession> PluginHost::load(const std::string& manifest_path
 
     wv::WebView::Config view_config;
     view_config.browser_data_dir = impl.env.browser_data_dir;
+    view_config.additional_browser_arguments = impl.env.additional_browser_arguments;
     view_config.profile_name     = profile_name_for(plugin_id);
     view_config.incognito        = false;
     view_config.devtools         = true;   // TODO(marketplace phase): tighten for release builds

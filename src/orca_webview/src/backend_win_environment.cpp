@@ -5,6 +5,9 @@
 #include <utility>
 #include <vector>
 
+#include <wrl/client.h>
+#include <WebView2EnvironmentOptions.h>
+
 namespace orca::wv::detail {
 namespace {
 
@@ -68,8 +71,10 @@ bool          s_loader_resolved = false;
 // Process-wide cached environment; this reference is never released.
 ICoreWebView2Environment* s_environment = nullptr;
 std::string               s_environment_folder;
+std::string               s_environment_args;
 bool                      s_environment_creating = false;
 std::string               s_pending_folder;
+std::string               s_pending_args;
 std::vector<EnvironmentReadyFn> s_pending_requests;
 
 const WebView2Loader* resolve_loader()
@@ -91,10 +96,12 @@ const WebView2Loader* resolve_loader()
     return &s_loader;
 }
 
-Status folder_conflict_status(const std::string& requested, const std::string& in_use)
+Status environment_conflict_status(const std::string& requested_folder, const std::string& requested_args,
+    const std::string& in_use_folder, const std::string& in_use_args)
 {
     return Status::make(Errc::InvalidState,
-        "WebView2 allows only one user data folder per process: requested '" + requested + "' but '" + in_use + "' is already in use");
+        "WebView2 allows only one environment per user data folder per process: requested folder '" + requested_folder +
+        "' with browser arguments '" + requested_args + "' but '" + in_use_folder + "' with '" + in_use_args + "' is already in use");
 }
 
 Status environment_failure_status(HRESULT hr)
@@ -134,13 +141,13 @@ std::string webview2_runtime_version()
     return version;
 }
 
-void acquire_shared_environment(const std::string& browser_data_dir, EnvironmentReadyFn on_ready)
+void acquire_shared_environment(const std::string& browser_data_dir, const std::string& additional_browser_arguments, EnvironmentReadyFn on_ready)
 {
     if (s_environment != nullptr)
     {
-        if (browser_data_dir != s_environment_folder)
+        if (browser_data_dir != s_environment_folder || additional_browser_arguments != s_environment_args)
         {
-            on_ready(folder_conflict_status(browser_data_dir, s_environment_folder), nullptr);
+            on_ready(environment_conflict_status(browser_data_dir, additional_browser_arguments, s_environment_folder, s_environment_args), nullptr);
             return;
         }
         s_environment->AddRef();
@@ -150,9 +157,9 @@ void acquire_shared_environment(const std::string& browser_data_dir, Environment
 
     if (s_environment_creating)
     {
-        if (browser_data_dir != s_pending_folder)
+        if (browser_data_dir != s_pending_folder || additional_browser_arguments != s_pending_args)
         {
-            on_ready(folder_conflict_status(browser_data_dir, s_pending_folder), nullptr);
+            on_ready(environment_conflict_status(browser_data_dir, additional_browser_arguments, s_pending_folder, s_pending_args), nullptr);
             return;
         }
         s_pending_requests.push_back(std::move(on_ready));
@@ -168,14 +175,24 @@ void acquire_shared_environment(const std::string& browser_data_dir, Environment
 
     s_environment_creating = true;
     s_pending_folder = browser_data_dir;
+    s_pending_args = additional_browser_arguments;
     s_pending_requests.push_back(std::move(on_ready));
 
     std::wstring folder_wide = utf8_to_wide(browser_data_dir);
     PCWSTR folder_argument = folder_wide.empty() ? nullptr : folder_wide.c_str();
 
-    // Options stay null: AdditionalBrowserArguments must never be set here or
-    // the environment would conflict with one wx already created in-process;
-    // user agent and color scheme are applied per-view through Settings/Profile.
+    // AdditionalBrowserArguments must match the environments wx created in
+    // this process (wxWebViewEdge passes --user-agent this way); the host
+    // layer builds the identical string. Empty args keep nullptr (pure orca
+    // test processes have no wx environment to match).
+    ICoreWebView2EnvironmentOptions* options = nullptr;
+    if (!s_pending_args.empty())
+    {
+        CoreWebView2EnvironmentOptions* made = Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>().Detach();
+        made->put_AdditionalBrowserArguments(utf8_to_wide(s_pending_args).c_str());
+        options = made;
+    }
+
     EnvironmentCreatedHandler* handler = new EnvironmentCreatedHandler(
         [](HRESULT errorCode, ICoreWebView2Environment* environment)
         {
@@ -188,6 +205,7 @@ void acquire_shared_environment(const std::string& browser_data_dir, Environment
 
             s_environment = environment; // keep the callback's reference as the process cache
             s_environment_folder = s_pending_folder;
+            s_environment_args = s_pending_args;
             std::vector<EnvironmentReadyFn> requests = std::move(s_pending_requests);
             s_pending_requests.clear();
             for (EnvironmentReadyFn& request : requests)
@@ -197,7 +215,9 @@ void acquire_shared_environment(const std::string& browser_data_dir, Environment
             }
         });
 
-    HRESULT hr = loader->create_environment(nullptr, folder_argument, nullptr, handler);
+    HRESULT hr = loader->create_environment(nullptr, folder_argument, options, handler);
+    if (options != nullptr)
+        options->Release();
     handler->Release();
     if (FAILED(hr))
     {

@@ -27,6 +27,11 @@ struct HostEnv
     // used by wxWebViewEdge, see wv::WebView::Config::browser_data_dir).
     std::string browser_data_dir;
 
+    // WINDOWS ONLY: additional browser arguments for the shared WebView2
+    // environment (must equal what wxWebViewEdge passes in this process, see
+    // wv::WebView::Config::additional_browser_arguments). macOS/Linux: ignored.
+    std::string additional_browser_arguments;
+
     // e.g. <data_dir>/plugin/permissions.json; parent dir must exist.
     std::string permission_store_path;
 };

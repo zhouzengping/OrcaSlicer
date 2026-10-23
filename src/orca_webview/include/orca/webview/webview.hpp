@@ -42,6 +42,14 @@ public:
         // (ICoreWebView2ControllerOptions::ProfileName). Empty = default profile.
         std::string profile_name;
 
+        // WINDOWS ONLY: additional browser arguments for the shared WebView2
+        // environment (ICoreWebView2EnvironmentOptions::AdditionalBrowserArguments).
+        // Every environment sharing one user data folder in a process must pass
+        // byte-identical options, including arguments already set by wxWebViewEdge
+        // instances created in this process; a mismatch is undefined behavior.
+        // macOS/Linux: ignored.
+        std::string additional_browser_arguments;
+
         bool incognito = false;   // win: IsInPrivateModeEnabled; mac/gtk: ephemeral store
 
         std::vector<CustomScheme> custom_schemes;

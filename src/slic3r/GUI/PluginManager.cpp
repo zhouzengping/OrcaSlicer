@@ -566,6 +566,7 @@ orca::plugin::PluginHost* PluginManager::ensure_host()
     env.host_version          = SLIC3R_VERSION;
     env.dispatcher            = [](std::function<void()> fn) { wxTheApp->CallAfter(fn); };
     env.browser_data_dir      = webview_user_data_dir();   // same shared WebView2 folder
+    env.additional_browser_arguments = webview_browser_arguments();   // must match the wx environments
     env.permission_store_path = m_permission_store_path;
     m_host                    = std::make_unique<orca::plugin::PluginHost>(env);
 

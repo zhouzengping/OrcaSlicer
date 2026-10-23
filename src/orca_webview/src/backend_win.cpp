@@ -170,7 +170,7 @@ public:
             return Status::make(Errc::ParentInvalid, "native parent is not a window");
 
         m_in_start = true;
-        acquire_shared_environment(m_config.browser_data_dir,
+        acquire_shared_environment(m_config.browser_data_dir, m_config.additional_browser_arguments,
             [this, state = m_state](Status status, ICoreWebView2Environment* environment)
             {
                 if (state->closed)

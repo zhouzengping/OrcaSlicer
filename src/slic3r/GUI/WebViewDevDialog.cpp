@@ -84,6 +84,7 @@ void WebViewDevDialog::create_webview()
 {
     orca::wv::WebView::Config cfg;
     cfg.browser_data_dir = webview_user_data_dir();
+    cfg.additional_browser_arguments = webview_browser_arguments();   // must match the wx environments
     cfg.devtools         = true;
 
     orca::wv::CustomScheme scheme;
@@ -239,6 +240,7 @@ void WebViewDevDialog::ensure_plugin_host()
     env.host_version          = SLIC3R_VERSION;
     env.dispatcher            = [](std::function<void()> fn) { wxTheApp->CallAfter(fn); };
     env.browser_data_dir      = webview_user_data_dir();   // same shared WebView2 folder
+    env.additional_browser_arguments = webview_browser_arguments();   // must match the wx environments
     env.permission_store_path = m_plugin_store_path;
     m_plugin_host             = std::make_unique<orca::plugin::PluginHost>(env);
 

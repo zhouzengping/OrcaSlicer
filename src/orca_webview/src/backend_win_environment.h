@@ -1,9 +1,10 @@
 #pragma once
 
 // Windows-only: WebView2Loader.dll bootstrap and the process-wide
-// ICoreWebView2Environment. WebView2 allows a single user data folder per
-// process, so the first successfully created environment is cached and every
-// later request with a different folder fails with InvalidState.
+// ICoreWebView2Environment. WebView2 allows a single environment per user
+// data folder per process, so the first successfully created environment is
+// cached and every later request with a different folder or different
+// browser arguments fails with InvalidState.
 
 #include <functional>
 #include <string>
@@ -41,9 +42,11 @@ using EnvironmentReadyFn = std::function<void(Status status, ICoreWebView2Enviro
 
 /*
  * Hands out the process-wide environment for the given user data folder.
- * on_ready fires on the UI thread, possibly synchronously; environment is
- * AddRef'd for the receiver and null on failure.
+ * additional_browser_arguments must be byte-identical across every request in
+ * the process (folder or arguments mismatch is undefined behavior per
+ * WebView2). on_ready fires on the UI thread, possibly synchronously;
+ * environment is AddRef'd for the receiver and null on failure.
  */
-void acquire_shared_environment(const std::string& browser_data_dir, EnvironmentReadyFn on_ready);
+void acquire_shared_environment(const std::string& browser_data_dir, const std::string& additional_browser_arguments, EnvironmentReadyFn on_ready);
 
 } // namespace orca::wv::detail

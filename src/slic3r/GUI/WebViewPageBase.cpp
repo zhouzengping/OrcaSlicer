@@ -1,6 +1,7 @@
 #include "WebViewPageBase.hpp"
 
 #include "SSWCP.hpp"
+#include "common_func/common_func.hpp"
 #include "slic3r/GUI/GUI_App.hpp"
 #include "libslic3r/Utils.hpp"
 
@@ -60,6 +61,27 @@ std::string webview_user_data_dir()
     return std::string(buf.data(), buf.length());
 }
 
+std::string webview_browser_arguments()
+{
+#if defined(_WIN32)
+    // Snapshot once: the process-wide environment is created once and its
+    // arguments are fixed at wx's first webview creation, so a later dark-mode
+    // switch must not change the string.
+    static const std::string s_arguments = []
+    {
+        const wxString user_agent = wxString::Format(
+            "SM-Slicer/v%s (%s) Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36 Edg/107.0.1418.52",
+            SLIC3R_VERSION, Slic3r::GUI::wxGetApp().dark_mode() ? "dark" : "light");
+        const wxScopedCharBuffer buf = user_agent.ToUTF8();
+        return "--user-agent=\"" + std::string(buf.data(), buf.length()) + "\"";
+    }();
+    return s_arguments;
+#else
+    return std::string();
+#endif
+}
+
 WebViewPageBase::WebViewPageBase(wxWindow* parent)
     : wxPanel(parent, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxTAB_TRAVERSAL)
 {
@@ -95,6 +117,12 @@ bool WebViewPageBase::create_view(const orca::wv::WebView::Config& cfg)
     orca::wv::WebView::Config config = cfg;
     if (config.browser_data_dir.empty())
         config.browser_data_dir = webview_user_data_dir();
+#if defined(_WIN32)
+    // Must stay byte-identical to the AdditionalBrowserArguments of the wx
+    // WebView2 environments created in this process (see webview_browser_arguments).
+    if (config.additional_browser_arguments.empty())
+        config.additional_browser_arguments = webview_browser_arguments();
+#endif
     // Ride ahead of every page script so flutter pages can post from line one.
     config.extra_init_scripts.insert(config.extra_init_scripts.begin(), g_wx_compat_shim);
 
