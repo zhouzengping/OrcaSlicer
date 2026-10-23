@@ -955,7 +955,6 @@ sw_SwitchTab 特判与 m_tab_map 唯一消费点。**三条全部验收通过，
 ### tab 自动刷新**（page.state active → sample 页 orca.filament.list 重拉），
 ### 以及中心页 open 被拒时中文界面出中文 toast（不再是英文直出）。结果
 ### （成功/卡点）逐项写进 FEEDBACK.md 并 commit。
-
 ---
 
 ## Round 1 / review 11 — f2bbe1e810 "fix plugin center blank page/crash: WebView2 env options"
@@ -1073,3 +1072,116 @@ WebView2EnvironmentOptions.h（nuget 1.0.1418.22，随 wx 构建）、全部 Set
 ### UIAutomation 验证不构成交付；请在下一个 commit 前把现有进度（含本 bug 的
 ### 发现-修复-复验全过程）补写进 FEEDBACK.md。冒烟剩余项在 must-fix 验收后
 ### 继续。
+
+---
+
+## Round 1 / review 12 — 94a334daab（REVIEWER 撤回旧 E1、落地修正、崩溃真因实测）
+
+本节取代本轮 REVIEWER 早前误写为第二条 "review 11" 的条目（其时位于本条
+之前、立论前提错误、未 commit，已整条移除）。三件事：(1) 撤回我的错误结论；
+(2) 独立确认 3c3cac2aaa 所载复核（f2bbe1e810 条）的中心前提并把修正代码
+落地到工作区；(3) 用受控实验把崩溃真因钉死为该条 SHOULD FIX 候选 3（残留
+浏览器进程持有共享 UDF），同时修正该条一处事实错误（"同一 header 同值"）。
+
+**撤回声明**：我此前断言 "wx 工厂在每次 legacy webview 创建时用当时
+dark_mode 现烤 --user-agent 传入环境参数"（旧 E1 快照时序洞）——前提错误。
+独立复核确认 3c3cac2aaa 的证据链成立：Widgets/WebView.cpp:110 的
+WebViewEdge 子类 override virtual SetUserAgent（wx/webview.h:190 virtual →
+wx/msw/webview_edge.h:89 wxOVERRIDE），实现为 per-view
+ICoreWebView2Settings2::put_UserAgent + pendingUserAgent 暂存，从不写
+wxWebViewEdgeImpl 的 m_customUserAgent（private，子类不可达）；全部调用点
+（WebView.cpp:390/419/539、WebViewDialog.cpp:871）虚派发到子类 ⇒ 本进程
+wx 环境 AdditionalBrowserArguments 恒为空。旧代码（nullptr options）本就
+与 wx 字节一致；dark_mode 切换不会造成环境参数分裂（UA 是 per-view 的）。
+旧 E1 及其修复（进程级 UA 快照 + wx 工厂改读快照，动过 Widgets/
+WebView.cpp）已全部回滚，作废。
+
+- [MUST FIX → 已由本轮 REVIEWER 落地工作区，待主会话 commit] **修正 =
+  webview_browser_arguments() 返回空串（f2bbe1e810 条修法 (a) 前半），
+  但有意偏离其后半（"无条件构造 WRL options"）**。落地三文件：
+  (1) WebViewPageBase.cpp：webview_browser_arguments() 返回空串，注释写明
+  依据（子类 override ⇒ wx 环境参数恒空，字节一致即空）；函数、Config
+  字段、三处接线全部保留，未来 wx 侧真启用时只需填这一个函数。仅为
+  SLIC3R_VERSION 引入的 common_func.hpp include 一并移除。
+  (2) WebViewPageBase.hpp：文档注释同步。
+  (3) backend_win_environment.cpp：options 构造处注释重写（空 args ⇒
+  保持 nullptr 的理由）；新增 trace_environment()（OutputDebugStringA），
+  覆盖 create requested / completed / failed(async) / failed(sync) 四阶段
+  ——即 f2bbe1e810 条 Next 要求的"环境创建起止/失败日志"，下次复现可用
+  DebugView 直接取证。
+  **偏离依据（并修正 f2bbe1e810 条一处事实错误）**：该条 [OK] 称 WRL
+  ctor 的 TargetCompatibleBrowserVersion "与 wx 用同一 header 同值"——
+  不成立。wx 编译用随其构建拉取的 nuget 头（dep_wxWidgets-build/packages/
+  Microsoft.Web.WebView2.1.0.1418.22/build/native/include/
+  WebView2EnvironmentOptions.h:12 = L"107.0.1418.22"）；orca 侧
+  backend_win_environment.cpp 包含的是本仓 deps/WebView2/include/
+  WebView2EnvironmentOptions.h:28 = L"138.0.3351.48"。按 (a) 无条件构造
+  会得到 TCBV=138 vs wx 107 的新形状差异，且把运行时下限抬到 138（高于
+  wx 的要求）。nullptr-when-empty 保持可观察参数（args 空、无 TCBV 约束）
+  与 wx 等效且零下限变化。若仍要形状全等须显式
+  put_TargetCompatibleBrowserVersion(L"107.0.1418.22")——把 wx 的 nuget
+  版本硬编码进 orca，属劣化耦合；除非有证据表明 TCBV 参与同 UDF 环境
+  合并判定，否则不推荐（本轮 3 次干净启动 0 崩溃，无此证据）。
+  验证：orca_webview + libslic3r_gui + Snapmaker_Orca 重编译零错误，
+  ctest -R ^orca_ 37/37 绿。
+- [SHOULD FIX → 真因已实测钉死；缓解项移交后续] **崩溃根因 =
+  f2bbe1e810 条候选 3：被杀 app 残留的 msedgewebview2 孤儿树持有共享
+  UDF**。受控实验（全部跑在修正后构建上）：run1 干净 UDF → 通过（插件
+  中心渲染，截图在案）；run1 结束被 Stop-Process -Force → msedgewebview2
+  孤儿持有 UDF → run2 CRASH（dmp 11:56）、run3 CRASH（dmp 12:04，签名
+  全同）；随后受控复验——12:05 的 6 个具名孤儿 PID（23548/33040/39108/
+  53780/61608/62896）在场启动 run4 → CRASH（exit 0xC0000005）；杀掉孤儿
+  后 run5/run6 均无崩溃（UIA 文本探针两次阴性——该探针从未成功过，渲染
+  确认以 run1 截图变体为准，不影响崩溃判定）。run6 自己的 force-kill 留下
+  的 2 个孤儿 ~2 分钟内自行退出——孤儿是否滞留正是间歇性的来源。两份
+  dmp 分析完全一致：0xC0000005 于 orca_webview.dll+0xB425 =
+  BackendWin::set_bounds（backend_win.cpp:242-248）的
+  m_controller->put_Bounds 间接调用，vtable 槽（+0x30）值为
+  0xFFFFFFFFFFFFFFFF、异常参数为读 0xFFFFFFFFFFFFFFFF ⇒ 间接调用目标
+  是 -1：**controller 对象已被释放（use-after-free 特征，非空指针解引用）**，
+  UI 线程（线程表首位）、view state=Ready（set_bounds 的 ready() 门已过）。
+  函数定位依据：.pdata 区间 0xB2E0-0xB591 内引用串 "webview controller
+  is not ready"（Errc 1002=0x3ea）与 "put_Bounds failed"（2000=0x7d0），
+  与源码逐值对应。orca_webview 自身引用计数自洽（controller 引用一次性
+  转移、close() 先置空再 Release，全 UI 线程无竞态）——对象是被外部
+  （loader 侧随浏览器进程/环境死亡）释放的。机理链：app 被杀/崩溃 →
+  msedgewebview2 孤儿持有 GetUserLocalDataDir（wx 与 orca 共享）→ 下次
+  启动的环境/控制器死胎 → put_Bounds 经已释放 controller → AV。**两次
+  崩溃均发生在修正后（空参数）构建上——env-args mismatch 不是崩溃成因**；
+  原始用户"一次崩溃后白屏/崩溃循环"的症状与本机理自洽。方法论注意：
+  冒烟/repro 脚本用 Force kill 恰好制造该前置条件，后续脚本要记录（优雅
+  退出或杀后清理孤儿）。缓解方向（EXECUTOR 评估，非本轮）：利用已加的
+  四阶段 trace + Status hr 做死胎检测（重试或转干净报错）；app 退出确保
+  浏览器树随退；必要时文档化"强杀后需等 msedgewebview2 退出再重启"。
+- [OK] 以下结论经本轮独立复核仍成立，自被撤回条目 carry-over（以本条
+  为准）：(a) 环境缓存两阶段写入无竞态无脏值（pending 对先成对写入再置
+  creating 位；creating 期排队按 pending 对比对；loader 缺失同步拒 /
+  HRESULT 同步失败 / 异步 errorCode 失败三条路径都复位 creating 并
+  fail_pending 清队；残留 pending 值失败后不可达，下次成对覆写）；
+  (b) 同 UDF 创建点覆盖完整（WebViewPageBase::create_view 空值自动填、
+  WebViewDevDialog:85 显式填、plugin_host.cpp:301 经 HostEnv，两个
+  HostEnv 填充点同源；全仓无第 4 处直接 create；纯 orca 测试进程空
+  args → nullptr options 与改前逐字节一致）；(c) 三库冻结接口加法合规
+  （两字段默认空、文档注明 Windows-only、全仓无位置式聚合初始化、既有
+  嵌入方不填即空）；(d) 跨平台面完好（#else 空串、#if defined(_WIN32)
+  包裹、新字段 mac/gtk 后端不读、backend_win*.cpp 仍在 WIN32 门内）；
+  (e) 空 args 回归面与 6fcc392e6c 以来逐字节一致；(f) 备注三项：
+  WebView::RecreateAll 用 Mac 格式 UA 串再调 SetUserAgent 在 Windows 上
+  为无害存量怪癖（基实现先赋值后拒、Create 后不再被读）；登录框
+  m_sm_user_agent 是 HTTP 自定义头不进环境参数；put_ 忽略 HRESULT 若
+  收紧应连同 backend_win.cpp:359-360 两处存量一起。
+
+### Verdict: NEEDS CHANGES（与 3c3cac2aaa 所载结论一致：94a334daab 修复
+### 前提与代码事实相反。修正代码已由本轮 REVIEWER 落地工作区并重编译验证
+### ——空参数返回 + nullptr-when-empty（含对修法 (a) 后半的有据偏离）+
+### 四阶段环境 trace；崩溃真因实测为残留浏览器进程持有共享 UDF，与
+### env-args 无关，缓解项移交后续任务）
+### Next: 1) 主会话以 `[plugin-demo] fix review-11/12 must-fix` 落地工作区
+### 三文件（WebViewPageBase.hpp / WebViewPageBase.cpp /
+### backend_win_environment.cpp），不要 amend 94a334daab。2) EXECUTOR：
+### FEEDBACK.md 的 1.7 冒烟台账仍缺席（f2bbe1e810 条已催过一次）；本轮
+### 6 次 repro 结果（含 2 份 dmp 与孤儿进程对照实验）应作为清单第 10 项
+### 的证据入账，Force-kill 方法论注意一并写入。3) 新任务：残留浏览器进程
+### 缓解（见 SHOULD FIX 条），并用四阶段 trace 做一次带 DebugView 的复现
+### 取 hr 证据。4) TCBV 形状问题（构造 options vs nullptr）如要跟进，先拿
+### 运行时证据再动，见偏离依据；默认维持 nullptr-when-empty。
