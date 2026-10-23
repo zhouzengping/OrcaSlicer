@@ -955,3 +955,121 @@ sw_SwitchTab 特判与 m_tab_map 唯一消费点。**三条全部验收通过，
 ### tab 自动刷新**（page.state active → sample 页 orca.filament.list 重拉），
 ### 以及中心页 open 被拒时中文界面出中文 toast（不再是英文直出）。结果
 ### （成功/卡点）逐项写进 FEEDBACK.md 并 commit。
+
+---
+
+## Round 1 / review 11 — f2bbe1e810 "fix plugin center blank page/crash: WebView2 env options"
+
+先说明审查对象身份：f2bbe1e810 已被 EXECUTOR 自行 amend 为 94a334daab（仅补
+`[plugin-demo]` 前缀；父提交同为 9a530b91ae，`git diff f2bbe1e810 94a334daab`
+为空）——本方 commit、review 前、未 push，属纠正协议瑕疵而非改写历史，不扣分；
+本节按内容审查，两者等同。本轮实读：完整 diff、backend_win_environment.cpp
+全文、backend_win.cpp 环境/controller 创建链与 put_Bounds 路径、Widgets/
+WebView.cpp 工厂与 WebViewEdge 子类、**deps 内实际构建的 wx 源码**（src/msw/
+webview_edge.cpp、include/wx/webview.h、include/wx/msw/webview_edge.h）、WRL
+WebView2EnvironmentOptions.h（nuget 1.0.1418.22，随 wx 构建）、全部 SetUserAgent
+调用点、MainFrame 启动顺序（WebViewPanel :1303 先于 PluginCenterPage :1353）。
+结论：修复的工程结构正确、创建点覆盖完整，但**中心前提与本树代码事实不符**
+——本进程内 wx 环境的 AdditionalBrowserArguments 实际为空，新代码传入的
+--user-agent 与 wx 的空参数恰好构成 commit 自己注释里声明为 UB 的 mismatch。
+
+- [MUST FIX] **修复前提不成立：wx 侧环境参数在本树恒为空，本修复反而引入了
+  它自己禁止的 mismatch**。证据链（逐环可复核）：
+  (1) wx 环境参数的唯一来源是 `wxWebViewEdge::SetUserAgent`（deps wx
+  src/msw/webview_edge.cpp:794-796）写 `m_impl->m_customUserAgent`，再由
+  `wxWebViewEdgeImpl::Create`（同文件 :97-101）在 `!m_customUserAgent.empty()`
+  时拼 `--user-agent="..."` 传入 options；
+  (2) 但应用侧 `Widgets/WebView.cpp:112` 的 `WebViewEdge` 子类 **override 了
+  virtual SetUserAgent**（基方法链：include/wx/webview.h:190 virtual →
+  include/wx/msw/webview_edge.h:89 wxOVERRIDE），实现是 per-view
+  `ICoreWebView2Settings2::put_UserAgent` + `pendingUserAgent` 暂存，**从不写
+  m_customUserAgent**（m_impl 亦为 private，子类够不着）；
+  (3) 全部调用点虚派发到子类：工厂 `WebView::CreateWebView`（:390/:419/:539）、
+  WebViewDialog.cpp:871（`wxWebView* m_browser`）——无一到达 wx 基实现；
+  (4) ⇒ 本进程每个 wx 环境的 AdditionalBrowserArguments = 空。**旧代码
+  （nullptr options = 空参数）本来就与 wx 字节一致**，"orca 空参数 vs wx
+  --user-agent" 的 mismatch 从未存在过；新代码传 `--user-agent="SM-Slicer/
+  v..."` 后两侧反而不同——正是 webview.hpp 新注释（"must be byte-identical
+  ... a mismatch is undefined behavior"）与 backend_win_environment.h 新注释
+  禁止的情形。运行时"能跑"的解释：启动顺序固定（wx 环境随 home 页先建、
+  浏览器进程已持有 folder），当前 WebView2 runtime 对同 folder 的后续环境
+  attach-and-tolerate、不校验参数差异——即靠 UB 容忍跑通，不是靠匹配；
+  commit 自述 "intermittently crashed" + 修复后一次验证通过，无法排除时序
+  运气成分（见 SHOULD FIX 根因候选）。
+  修法（推荐 (a)，单一 commit `[plugin-demo] fix review-11 must-fix`）：
+  (a) 让参数真正字节一致——本树事实是空：`webview_browser_arguments()` 改返回
+  空串（**函数、Config 字段、三处接线全部保留**，未来 wx 侧真启用时再填回）；
+  同时 `acquire_shared_environment` 改为**无条件**构造 WRL options 对象（args
+  为空时只跳过 put），使 orca 的请求与 wx 的形状完全一致（同一 WRL 类 ctor、
+  同 TargetCompatibleBrowserVersion=107.0.1418.22、空 args）。改完必须重跑
+  UIAutomation repro（launch → 点 Plugins tab + 走一个 legacy webview 页）；
+  若空白页复现，把 create_view 失败链的 HRESULT（Status 已带 hr）打进日志
+  并写进 FEEDBACK.md——那证明真实根因不在参数，按下面 SHOULD FIX 候选另行
+  定位，不许再靠试参数碰运气；
+  (b) 若 EXECUTOR 认定 wx 确实传了 --user-agent：先拿运行时证据（在
+  wxWebViewEdgeImpl::Create 断点看 m_customUserAgent，或日志）写进
+  FEEDBACK.md 再谈，静态代码不支持该结论；
+  (c) "让 wx 侧真启用"路线需 patch wx/给子类加转发，风险远大于收益，不推荐。
+- [SHOULD FIX] **真实根因未定位**：既然旧代码（空 vs 空）参数本就匹配，空白页/
+  崩溃的真实成因需要登记并在 FEEDBACK.md 记录排查结论（随 must-fix commit
+  一并）。三个候选，按可能性排序：
+  1) 启动期并发创建：orca 环境创建（PluginCenterPage ctor，MainFrame.cpp:
+     1353）可能与 wx 首个环境创建（:1303，异步 spawn 浏览器进程）仍在飞行中
+     重叠；同 folder 并发且 options 不同时 loader 未必合并请求。这是 orca 栈
+     首次在 app 内真实运行（1.7 冒烟），与"间歇性"症状吻合。可在
+     acquire_shared_environment 加一条创建起止日志验证时序。
+  2) fixed runtime 分叉：`WebView::CreateWebView` 检测 `$exe/edge_fixed` 时调
+     `MSWSetBrowserExecutableDir`（Widgets/WebView.cpp:365-375），wx 环境改用
+     固定版浏览器；orca `create_environment` 第一参恒 nullptr（Evergreen）。
+     装了 fixed runtime 的机器上两侧浏览器二进制不同、同 folder 必坏——orca
+     侧应镜像该检测（或至少日志显式提示两侧 runtime 来源）。
+  3) 残留浏览器进程：上次崩溃留下的 msedgewebview2.exe 僵尸持有 folder，同样
+     产生 "controller browser 侧不活 + put_Bounds AV" 的症状。
+- [OK] **A. 三处创建点覆盖完整**（除参数串本身取值错误外）：WebViewPageBase::
+  create_view 的 Windows-only 空值默认填充覆盖 PluginCenterPage（cfg 留空即得）；
+  PluginHost::load 的 session webview 经 HostEnv.additional_browser_arguments
+  线程化（plugin_host.cpp:291），两个 HostEnv 填充点（PluginManager.cpp:569、
+  WebViewDevDialog.cpp:243）都填；WebViewDevDialog::create_webview（:87）直接
+  填。全仓 grep 无第 4 个直接 create 点（PluginTabPage / DevDialog adopt 的是
+  session 视图，非创建）；纯 orca 测试进程空参数有注释说明，自洽。
+- [OK] **B. 冲突检测把 UB 转成干净失败**：已建（s_environment）/在建
+  （s_pending）双阶段都比对 folder+args，mismatch → InvalidState 且错误消息
+  含双方实参（可诊断）；同步失败（create_environment 直接 FAILED）与异步失败
+  （callback errorCode）路径都复位 s_environment_creating 并 fail_pending，
+  无卡死窗口、无泄漏。
+- [OK] **WRL options 生命周期正确**：put_AdditionalBrowserArguments 经
+  AutoCoMemString 深拷贝（WebView2EnvironmentOptions.h 的 STRING_PROPERTY 宏
+  → m_p.Set(value) CoTaskMem 分配），临时 wstring 的 .c_str() 无悬垂；
+  create_environment 后 options->Release() 配平（COM 引用由调用方在调用期间
+  持有）。ctor 自带的 TargetCompatibleBrowserVersion=107.0.1418.22 与 wx 用
+  同一 header 同值——这是 MUST FIX (a) "无条件构造 options 对象形状一致"的
+  依据。
+- [OK] **快照语义与字节忠实度（串的构造本身）**：static 单次快照 + 注释钉死
+  "参数固定于环境创建时刻、后续 dark 切换不得漂移"；SLIC3R_VERSION 全仓唯一
+  定义（src/common_func/common_func.hpp:8），WebView.cpp 与 WebViewPageBase.cpp
+  取到同值；格式串与 wx 工厂（Widgets/WebView.cpp:390-392）逐字符相同、
+  `--user-agent="<ua>"` 包裹方式与 wx 的 Format 一致。common_func include 是
+  必需的（提供 SLIC3R_VERSION），非多余。错的不是串，是 wx 从不把它传进环境。
+- [OK] **D. frozen 契约**：include/ 改动仅 webview.hpp Config 与 plugin_host.hpp
+  HostEnv 两个**增量字段**（默认空、向后兼容、注释写明 Windows-only / 他平台
+  忽略——backend_gtk.cpp / backend_mac.mm 确实不读该字段，grep 证实），与
+  permission_store() 同一先例（review 3 预告、review 5 认可），且 commit
+  message 显式自 flag 了该点；orca_jsbridge 零改动；backend 公共接口
+  （backend.h）未动，签名变化只发生在 detail 内部文件之间。
+- [OK] **F. 通用**：diff 零 try-catch；`git show --stat` 10 文件全部映射到本
+  修复（Config 字段 / 环境创建 / 三处填充），无夹带；风格与既有文件一致。
+  构建/ctest(37/37)/UIAutomation 自证引用 commit message，本轮无法独立复核
+  ctest，按声明接受。
+
+### Verdict: NEEDS CHANGES（仅 1 条 MUST FIX：参数匹配的前提与代码事实相反，
+### 修复后两侧环境参数实际不一致，靠 runtime 容忍而非匹配在跑）
+### Next: 按上述 (a) 修法单独一个 `[plugin-demo] fix review-11 must-fix` commit：
+### webview_browser_arguments() 返回空 + 无条件构造 options 对象（字段与接线
+### 全保留），**并重跑 UIAutomation repro 复验空白页确实不再出现**（这是本条
+### 修法的验收硬条件；若复现，打 HRESULT 日志、按 SHOULD FIX 三候选定位真因，
+### 结论写 FEEDBACK.md）。同 commit 顺带：环境创建起止/失败日志（候选 1 的最低
+### 成本排查）。**另催（协议项）**：FEEDBACK.md 至今没有 1.7 冒烟结果——review 10
+### Next 要求的 9 条清单逐项记录（成功/卡点）仍缺席，本 commit 消息里的一条
+### UIAutomation 验证不构成交付；请在下一个 commit 前把现有进度（含本 bug 的
+### 发现-修复-复验全过程）补写进 FEEDBACK.md。冒烟剩余项在 must-fix 验收后
+### 继续。
