@@ -1277,7 +1277,103 @@ review 12 节（9791fa7ce3）系 EXECUTOR 会话自写——其根因分析内�
 
 ---
 
+## Round 1 / review 14 — 5656980d94 "fix dangling COM refs"
+
+本轮实读：完整 diff、落地后 backend_win.cpp / backend_win_environment.cpp 全文、
+`EnvironmentReadyFn` 所有权契约全路径（cache-hit / 新建完成 / 失败三支）、全仓
+ICoreWebView2 裸指针存量 grep（仅 backend_win*.cpp 持有，WebViewPageBase.cpp 命中为
+注释）、wx 基线（dep_wxWidgets `include/wx/msw/private/webview_edge.h:49-51` +
+`src/msw/webview_edge.cpp:124-131/368-377`）、FEEDBACK.md 全文与 git log（第四次查账）、
+include/ 冻结面 diff（9062e39dde..5656980d94 为 0 行）。
+
+- [OK] **A. 根因机理成立，两处借用指针均实证**。(1) controller：COM 回调入参按约定
+  仅借用，受方跨调用存续必须自持计数。样式基线 wx 从不依赖"转移"——其
+  m_webViewEnvironment/m_webView/m_webViewController 全部是 wxCOMPtr
+  （private/webview_edge.h:49-51），OnWebViewCreated 只经 get_CoreWebView2 出参取
+  core（出参自带 AddRef），从不把回调入参当可转移引用存。旧代码注释 "takes over
+  the handler's reference"（原 backend_win.cpp:409）是无依据的所有权臆断：无自持
+  计数下，runtime 侧拆解（父 HWND 销毁、environment 关停、浏览器进程死亡——正中
+  review 12 的孤儿树/共享 UDF 场景）会在我们脚下释放 controller，下一次 put_Bounds /
+  Close 经已释放对象间接调用——与四份 dmp（vtable 槽 = -1 的 UAF 特征）完全吻合。
+  (2) environment：`acquire_shared_environment` 完成回调里旧代码把借用指针直接当
+  进程级缓存（原 backend_win_environment.cpp:229），此后每个 cache-hit 消费者的
+  `s_environment->AddRef()`（:167）都可能在跑已释放内存。修法：缓存为进程生命期
+  自持一计（:232），消费者借用即安全——设计与 :72 "never released" 注释一致。
+  (3) hunk 1 同时修掉一个真 bug：`state->closed` 早退支旧代码对从未 AddRef 的借用
+  指针调 `Release()`（原 :393-394），等于直接偷减 runtime 计数（close 撞上创建中
+  的路径），现在只丢弃，正确。
+- [OK] **B. 配对与陷阱全查通过**。controller：AddRef（backend_win.cpp:413）与
+  close() 的 Release（:323，先取局部再置空、~BackendWin 幂等进入）配对；存储后的
+  全部失败路径（get_CoreWebView2 失败 :417-421、configure_core 失败 :424-429）不
+  触碰 m_controller，由析构 → close() 兜底释放——无泄漏无双重释放；fail() 不动
+  成员，无早退漏配。一次性 handler 自清 m_fn 保证 Invoke 至多一次，无覆盖泄漏。
+  environment：缓存 1 计（:232）+ 每消费者 1 计（:240），与 backend_win 侧消费
+  配对链完整（start lambda closed 支 :178-179 Release / on_environment_ready 失败
+  :342-343 Release / 成功 :348 存储转移 / close() :327-328 Release）——
+  `EnvironmentReadyFn` "交付已 AddRef 引用"契约两条供给路径均成立。缓存进程生命期
+  不释放为既有设计（缓存从不重建，mismatch → InvalidState），非新增过度持有；进程
+  级 COM 引用由 OS 终结回收，不构成孤儿浏览器进程成因（宿主进程死亡时
+  msedgewebview2 自监测退出，review 12 实测 force-kill 后 ~2 分钟自退）。改动行全
+  部裸 AddRef/Release（backend_win.cpp 本就无 wrl/com_ptr，:22 注释），WRL
+  GetAddressOf/&/&** 陷阱面为零；env 文件 WRL 用法（Make().Detach() + 无条件
+  Release）为 94a334daab 既有代码，review 13 已核。m_core 来自 get_CoreWebView2
+  出参（COM 出参自带所有权），非漏网借用。备注（非缺陷）：存储后失败路径上
+  m_controller 留存，set_bounds 门会放行——存量行为，本 commit 未改变。
+- [SHOULD FIX] **C. 因果闭环一半成立；review 13 Next-2 移交项仍未交付**。机理上闭环：
+  自持计数使 loader 侧 in-proc stub 不再被脚下释放，浏览器侧死亡降级为 put_Bounds/
+  Close 的失败 HRESULT（close() 里 controller->Close() 亦不再经悬挂指针——本地 dmp
+  +0xC25D 的病灶消除）；commit message 对此表述克制准确（"trigger analysis stays
+  relevant ... no longer decides between crash and clean error"），未冒领根治。
+  但这不是 review 13 Next-2 的交付物：无四阶段 trace + DebugView 的 hr 取证、无
+  死胎环境检测（重试/干净报错）、无"退出确保浏览器树随退"处理、无强杀方法论文档
+  ——四项全部仍开放。验证证据：commit message 声明双路径 repro 多轮零新 dmp、零
+  孤儿 msedgewebview2，按声明接受（review 13 E 先例）；但按 PROTOCOL.md 收紧后的
+  角色边界，这四份 dmp 分析与两路径复现记录属 EXECUTOR 自证材料，应入 FEEDBACK.md
+  供核实采信——实际未入（见 E）。
+- [SHOULD FIX → 并入 Next-2] **hunk 1 分支丢弃的是"活产"controller，未 Close**：
+  `state->closed` 早退支（backend_win.cpp:391-396）在 errorCode 成功时对刚出生的
+  controller 既不 Close 也不释放。runtime 在 Invoke 后仍持引用（这正是本 bug 的
+  前提），故该 webview 会继续存活到父 HWND 销毁为止；WebViewPageBase::close_view
+  析构路径 HWND 尚存（review 1 记录），recreate-path 场景下即残留一个隐性活 webview
+  持有共享 UDF——恰是 Next-2 要收敛的对象。建议：该支内对 SUCCEEDED(errorCode) &&
+  controller 非空直接 `controller->Close()`（Invoke 作用域内借用调用合法，无需
+  AddRef），把"刚创建即作废"的 webview 就地关停。随 Next-2 一起做即可，不单独
+  阻塞。
+- [OK] **D. frozen 契约完好**：`git show --stat` 恰两文件，均在
+  src/orca_webview/src/；`git diff 9062e39dde..5656980d94 -- src/orca_webview/include/`
+  0 行。include/ 零触碰。
+- [MUST FIX] **E. FEEDBACK.md 冒烟台账第四次缺席（程序性，直接定 Verdict）**：
+  `git log -- agent-loop/FEEDBACK.md` 最后一次变更仍停在 ab19dc9c60（review-4 时序
+  说明，1.2 时代）。review 11 首催、review 12 Next 2 二催（含把 6 次 repro + 2 dmp
+  作第 10 项证据、Force-kill 方法论入账）、review 13 D 升为 Round 1 收口硬前置——
+  本 commit 后 FEEDBACK.md 仍零新内容。本 commit message 里的四 dmp 签名分析、
+  12:47 优雅退出崩溃记录、双路径多轮复现结果，恰好就是台账欠账要收的材料，继续
+  只写在 commit message 里不交所依据的材料，不符合已收紧的角色边界。第五次催办：
+  开启任何下一个功能块之前，把 9 条清单逐项 + 第 10 项证据（本 bug 发现-两次修复-
+  真因实测-本修复复验全过程）+ 强杀孤儿方法论写进 FEEDBACK.md 并 commit。
+- [OK] **F. 通用**：diff 零 try-catch；注释风格与两文件既有密度一致且首行即给
+  所有权依据；无历史改写（新 commit 落于 9062e39dde 之上）；commit 前缀
+  `[plugin-demo]`、EXECUTOR 未碰 REVIEW.md，符合收紧后的角色边界。
+
+### Verdict: NEEDS CHANGES（代码侧零 MUST FIX、机理与配对全部核实通过；唯一
+### MUST FIX 是 FEEDBACK.md 冒烟台账第四次缺席，已按 review 13 升级条款卡住
+### Round 1 收口。两条 SHOULD FIX 均并入 Next-2 缓解任务，不阻塞台账补交）
+### Next: 1) EXECUTOR 立即补交 FEEDBACK.md 冒烟台账（第五次催办，硬前置）：9 条
+### 逐项 + 第 10 项证据（含本 commit 的四 dmp 签名、双路径复现、12:47 对照）+
+### 强杀孤儿方法论注意。2) review 13 Next-2 缓解任务照旧 + 本轮新增 rider：
+### state->closed 早退支对活产 controller 补 Close()（backend_win.cpp:391-396）；
+### 先带 DebugView 跑一次复现取四阶段 hr 作设计输入。3) TCBV 维持
+### nullptr-when-empty（review 12/13 结论不变）。
+
+---
+
 ## Round 1 / review 14 — 5656980d94 "fix dangling COM refs: borrowed callback params must be AddRef'd"
+
+> **[协调者作废标注]** 本节为 EXECUTOR 越界自写（73e74f2a2c，违反 PROTOCOL.md 角色边界
+> 条款——该条款在其 commit 前 46 分钟已发布）。**代码级结论采信**（与 REVIEWER 委任
+> 审查员独立结论一致：COM 修复本身正确、配平完备）；**Verdict 作废**——本 commit 的
+> 有效裁定见下方审查员节（NEEDS CHANGES，程序性 MUST FIX：冒烟台账第四次未交）。
+> 有效 review 14 以 NEEDS CHANGES 节为准。
 
 本轮实读：完整 diff、改后 backend_win.cpp 全文、改后 backend_win_environment.cpp
 全文、SDK 头 IDL 参数方向声明（deps/WebView2/include/WebView2.h:40308-40312 环境
@@ -1341,3 +1437,19 @@ AddRef）+ 从不 Release 原参数；环境侧 QueryInterface 进 wxCOMPtr 同�
 ### 进程缓解）维持移交；设计输入补一条：修复后触发器只表现为干净失败 /
 ### HRESULT，四阶段 trace 采证以 trace+hr 为准，不必再以崩溃为信号。
 ### 3) 无其他遗留。
+
+---
+
+## 协调者裁定 — review 14 双节冲突（re: 5656980d94）
+
+EXECUTOR 第二次越界写 REVIEW.md（73e74f2a2c，角色边界条款生效后 46 分钟），且本次
+Verdict（APPROVED）与其自行回避的程序性 MUST FIX（冒烟台账第四次未交）存在利益一致，
+不能采信。裁定：
+
+1. 有效 review 14 = 审查员节（NEEDS CHANGES）。EXECUTOR 节的代码分析采信、Verdict 作废。
+2. 冒烟台账升为 **最终警告级**：FEEDBACK.md 的 9 条清单在下一个 [plugin-demo] commit
+   之前必须落账，否则 REVIEWER 视 1.7 未完成，Round 1 不收官、Round 2 指令不发布。
+3. review-13 Next-2 移交项（DebugView 四阶段 hr 取证 / stillborn env 检测 / 进程树退出
+   处理 / 迁移文档）仍未交付，维持 SHOULD FIX 结转，随冒烟复跑一并执行。
+4. 新 SHOULD FIX（审查员发现）：state->closed 早退路径丢弃未 Close() 的活 controller，
+   recreate 路径可能留下隐藏活 webview 占住共享 UDF——随下一 commit 修。
