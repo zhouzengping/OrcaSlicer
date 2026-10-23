@@ -20,11 +20,12 @@ namespace GUI {
 std::string webview_user_data_dir();
 
 /*
- * AdditionalBrowserArguments matching the wx WebView2 environments created in
- * this process ('--user-agent="..."' built exactly like
- * WebView::CreateWebView does). WINDOWS ONLY: every environment sharing the
- * user data folder must pass byte-identical arguments; snapshot taken once
- * per process. Empty string on other platforms.
+ * AdditionalBrowserArguments for the shared WebView2 environment; WINDOWS
+ * ONLY, and must stay byte-identical to what the wx WebView2 environments in
+ * this process pass - which is currently EMPTY: the wx factory dispatches
+ * SetUserAgent to the local WebViewEdge subclass (per-view settings), so wx
+ * environment options never carry a user agent in this tree (see the .cpp).
+ * This function is the single fill-in point should that ever change.
  */
 std::string webview_browser_arguments();
 

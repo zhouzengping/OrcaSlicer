@@ -1,7 +1,6 @@
 #include "WebViewPageBase.hpp"
 
 #include "SSWCP.hpp"
-#include "common_func/common_func.hpp"
 #include "slic3r/GUI/GUI_App.hpp"
 #include "libslic3r/Utils.hpp"
 
@@ -63,23 +62,15 @@ std::string webview_user_data_dir()
 
 std::string webview_browser_arguments()
 {
-#if defined(_WIN32)
-    // Snapshot once: the process-wide environment is created once and its
-    // arguments are fixed at wx's first webview creation, so a later dark-mode
-    // switch must not change the string.
-    static const std::string s_arguments = []
-    {
-        const wxString user_agent = wxString::Format(
-            "SM-Slicer/v%s (%s) Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36 Edg/107.0.1418.52",
-            SLIC3R_VERSION, Slic3r::GUI::wxGetApp().dark_mode() ? "dark" : "light");
-        const wxScopedCharBuffer buf = user_agent.ToUTF8();
-        return "--user-agent=\"" + std::string(buf.data(), buf.length()) + "\"";
-    }();
-    return s_arguments;
-#else
+    // The wx WebView2 environments in this process are created with EMPTY
+    // AdditionalBrowserArguments: WebView::CreateWebView dispatches
+    // SetUserAgent virtually to the local WebViewEdge subclass
+    // (Widgets/WebView.cpp), which applies the user agent per view through
+    // ICoreWebView2Settings2 and never reaches wxWebViewEdge's
+    // m_customUserAgent -> environment-options path. Byte-identical therefore
+    // means empty here. The plumbing (Config field, host wiring) stays so a
+    // future wx-side change only has to fill this one function in.
     return std::string();
-#endif
 }
 
 WebViewPageBase::WebViewPageBase(wxWindow* parent)

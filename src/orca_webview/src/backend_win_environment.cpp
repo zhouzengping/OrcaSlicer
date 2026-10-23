@@ -2,6 +2,7 @@
 #include "string_util.h"
 
 #include <atomic>
+#include <cstdio>
 #include <utility>
 #include <vector>
 
@@ -110,6 +111,19 @@ Status environment_failure_status(HRESULT hr)
     return Status::make(code, "CreateCoreWebView2EnvironmentWithOptions failed", hr);
 }
 
+// Startup-race probe (review-11): environment creation is asynchronous and
+// overlaps the wx factory's own environment creations over the same user
+// data folder during MainFrame init. These traces make the interleaving and
+// any failure HRESULT visible in a debugger / DebugView without adding a
+// logging dependency to this wx-free library.
+void trace_environment(const char* stage, const std::string& detail, HRESULT hr = S_OK)
+{
+    char line[320];
+    snprintf(line, sizeof(line), "[orca_wv] environment %s hr=0x%08lX %s\n",
+        stage, static_cast<unsigned long>(hr), detail.c_str());
+    OutputDebugStringA(line);
+}
+
 void fail_pending(Status status)
 {
     std::vector<EnvironmentReadyFn> requests = std::move(s_pending_requests);
@@ -180,11 +194,18 @@ void acquire_shared_environment(const std::string& browser_data_dir, const std::
 
     std::wstring folder_wide = utf8_to_wide(browser_data_dir);
     PCWSTR folder_argument = folder_wide.empty() ? nullptr : folder_wide.c_str();
+    trace_environment("create requested", "folder='" + browser_data_dir + "' args='" + additional_browser_arguments + "'");
 
     // AdditionalBrowserArguments must match the environments wx created in
-    // this process (wxWebViewEdge passes --user-agent this way); the host
-    // layer builds the identical string. Empty args keep nullptr (pure orca
-    // test processes have no wx environment to match).
+    // this process. In this tree wx's value is EMPTY: the app's WebViewEdge
+    // subclass applies the user agent per view and never reaches
+    // wxWebViewEdge's environment-options path (see
+    // WebViewPageBase::webview_browser_arguments). Empty args keep nullptr:
+    // byte-identical to what orca passed before the plugin stack existed,
+    // and free of the TargetCompatibleBrowserVersion floor this SDK header
+    // would otherwise bake in (our header says 138.x while wx's bundled SDK
+    // bakes 107.x - always constructing the object would trade one mismatch
+    // for another and demand a newer runtime than wx does).
     ICoreWebView2EnvironmentOptions* options = nullptr;
     if (!s_pending_args.empty())
     {
@@ -199,10 +220,12 @@ void acquire_shared_environment(const std::string& browser_data_dir, const std::
             s_environment_creating = false;
             if (FAILED(errorCode) || environment == nullptr)
             {
+                trace_environment("create failed (async)", "folder='" + s_pending_folder + "' args='" + s_pending_args + "'", errorCode);
                 fail_pending(environment_failure_status(errorCode));
                 return;
             }
 
+            trace_environment("create completed", "folder='" + s_pending_folder + "'");
             s_environment = environment; // keep the callback's reference as the process cache
             s_environment_folder = s_pending_folder;
             s_environment_args = s_pending_args;
@@ -221,6 +244,7 @@ void acquire_shared_environment(const std::string& browser_data_dir, const std::
     handler->Release();
     if (FAILED(hr))
     {
+        trace_environment("create failed (sync)", "folder='" + browser_data_dir + "' args='" + additional_browser_arguments + "'", hr);
         s_environment_creating = false;
         fail_pending(environment_failure_status(hr));
     }
