@@ -30,8 +30,8 @@ class PluginTabPage;
  *   plugin.open          async  permission prompt -> dynamic tab
  *   plugin.close         async  close the plugin's dynamic tab
  *   plugin.install_sample async install the bundled sample plugin
- *   orca.filament.list   sync   filament list of the current project
- *   orca.host.info       sync   host version / platform / locale
+ *   orca.filaments       sync   filament list of the current project
+ *   orca.host            sync   host version / platform / locale
  */
 class PluginManager
 {

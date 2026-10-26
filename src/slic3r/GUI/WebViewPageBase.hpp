@@ -101,7 +101,12 @@ private:
 
     wxPanel*                           m_host_panel = nullptr;
     std::shared_ptr<orca::wv::WebView> m_view;      // owned, or adopted (bounds only)
+    // Native parent captured at view creation; a mismatch against the host
+    // panel's current HWND means wx recreated it and the view is orphaned.
+    void*                              m_view_parent_hwnd = nullptr;
     bool                               m_view_adopted = false;
+    // Coalesces the deferred page-level bounds passes (see the constructor).
+    bool                               m_bounds_pass_pending = false;
     std::unique_ptr<orca::jb::Bridge>  m_bridge;
 };
 

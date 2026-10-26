@@ -67,6 +67,9 @@ public:
         std::function<void(const Status&)>                   on_error;            // terminal -> state Failed
         std::function<void(const std::string&)>              on_message;          // raw JS -> native message
         std::function<void(const NavigationState&)>          on_document_loaded;
+        // Non-fatal navigation failure (page error); hosts log it, the state
+        // machine is untouched.
+        std::function<void(const NavigationState&, const Status&)> on_navigation_failed;
         std::function<void(const std::string&)>              on_title_changed;
         std::function<void(const std::string&)>              on_url_changed;      // origin tracking; consumed by jsbridge
         std::function<bool(const NavigationState&)>          on_navigation;       // return false to veto

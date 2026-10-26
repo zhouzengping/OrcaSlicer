@@ -428,7 +428,17 @@ private:
             return;
         }
 
-        m_controller->put_Bounds(RECT{0, 0, 0, 0});
+        // Seed the controller from the parent's real client rect instead of an
+        // unconditional zero rect: should none of the later bounds passes
+        // arrive, the view still matches the parent. A parent still awaiting
+        // layout reports an empty rect; the on_created / resize passes then
+        // correct it.
+        RECT  client{0, 0, 0, 0};
+        GetClientRect(m_parent_hwnd, &client);
+        const HRESULT bounds_hr = m_controller->put_Bounds(client);
+        if (FAILED(bounds_hr))
+            fail(Status::make(Errc::PlatformFailure, "put_Bounds failed", bounds_hr));
+
         m_proxy.report_created();
     }
 
@@ -551,15 +561,31 @@ private:
                 if (state->closed)
                     return;
                 BOOL success = FALSE;
-                if (FAILED(args->get_IsSuccess(&success)) || !success)
-                    return; // page errors are not fatal and are not reported
-                LPWSTR uri = nullptr;
-                if (FAILED(sender->get_Source(&uri)))
+                const HRESULT success_hr = args->get_IsSuccess(&success);
+                if (SUCCEEDED(success_hr) && success)
+                {
+                    LPWSTR uri = nullptr;
+                    if (FAILED(sender->get_Source(&uri)))
+                        return;
+                    NavigationState navigation;
+                    navigation.url = take_task_string(uri);
+                    navigation.is_main_frame = true;
+                    proxy->report_document_loaded(navigation);
                     return;
+                }
+                // Page errors are not fatal (no report_error, the state
+                // machine is untouched) but they are reported: a blank view
+                // over a silent navigation failure is undiagnosable. Source
+                // keeps the last committed URL; the failure reason rides in
+                // the platform status (WebErrorStatus, or the failed HRESULT).
                 NavigationState navigation;
-                navigation.url = take_task_string(uri);
-                navigation.is_main_frame = true;
-                proxy->report_document_loaded(navigation);
+                LPWSTR uri = nullptr;
+                if (SUCCEEDED(sender->get_Source(&uri)))
+                    navigation.url = take_task_string(uri);
+                COREWEBVIEW2_WEB_ERROR_STATUS web_error = COREWEBVIEW2_WEB_ERROR_STATUS_UNKNOWN;
+                const HRESULT error_hr = args->get_WebErrorStatus(&web_error);
+                const int64_t native   = SUCCEEDED(error_hr) ? static_cast<int64_t>(web_error) : static_cast<int64_t>(error_hr);
+                proxy->report_navigation_failed(navigation, Status::make(Errc::NavigationFailed, "navigation failed", native));
             });
         if (FAILED(m_core->add_NavigationCompleted(completed_handler, &token)))
             failures += "add_NavigationCompleted ";

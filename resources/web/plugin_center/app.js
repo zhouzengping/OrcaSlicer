@@ -6,7 +6,8 @@
 // shown instead. Everything goes through window.orca.call with the frozen
 // wire contract:
 //   plugin.list / plugin.pick_import / plugin.import / plugin.remove /
-//   plugin.open / plugin.close / plugin.install_sample / orca.host.info
+//   plugin.open / plugin.close / plugin.install_sample / orca.host /
+//   orca.filaments
 // plus the page.state event.
 
 // ---------------------------------------------------------------------------
@@ -102,7 +103,14 @@ function pickLocale() {
             return keys[i];
         }
     }
-    return LOCALE_ALIASES[lower] || FALLBACK_LOCALE;
+    if (LOCALE_ALIASES[lower]) {
+        return LOCALE_ALIASES[lower];
+    }
+    // The host sends "<language>-<country>" pairs such as "zh-cn-CN"
+    // (GUI_App::get_international_url), so a full-tag alias never matches.
+    // Fall back to the primary subtag: "zh-cn-CN" -> "zh" -> zh-CN.
+    const primary = lower.split('-')[0];
+    return LOCALE_ALIASES[primary] || FALLBACK_LOCALE;
 }
 
 const locale = pickLocale();
@@ -503,7 +511,7 @@ let lastActiveRefreshAt = 0;
 // Host version shown in the footer; best effort only.
 async function loadHostInfo() {
     try {
-        const info = await window.orca.call('orca.host.info', {});
+        const info = await window.orca.call('orca.host', {});
         if (info && info.host_version) {
             document.getElementById('page-footer').textContent = 'OrcaSlicer ' + info.host_version;
         }

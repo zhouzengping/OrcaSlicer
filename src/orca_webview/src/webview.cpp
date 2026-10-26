@@ -86,6 +86,12 @@ struct WebView::Impl : public detail::EventProxy
             events.on_document_loaded(nav);
     }
 
+    void report_navigation_failed(const NavigationState& nav, const Status& status) override
+    {
+        if (events.on_navigation_failed)
+            events.on_navigation_failed(nav, status);
+    }
+
     void report_title(std::string title) override
     {
         if (events.on_title_changed)

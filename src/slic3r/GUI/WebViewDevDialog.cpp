@@ -75,7 +75,11 @@ void WebViewDevDialog::build_ui()
 
     m_load_plugin_btn->Bind(wxEVT_BUTTON, &WebViewDevDialog::on_load_plugin, this);
     m_unload_plugin_btn->Bind(wxEVT_BUTTON, &WebViewDevDialog::on_unload_plugin, this);
-    Bind(wxEVT_SIZE, &WebViewDevDialog::on_size, this);
+    // Bind on the host panel, not on the dialog (same mode as
+    // WebViewPageBase): a dialog-level handler reads the host panel's size
+    // before the top-level sizer laid it out, so every resize would push the
+    // pre-layout (stale) rect into the view.
+    m_host_panel->Bind(wxEVT_SIZE, &WebViewDevDialog::on_size, this);
     Bind(wxEVT_TIMER, &WebViewDevDialog::on_timer, this);
     Bind(wxEVT_CLOSE_WINDOW, &WebViewDevDialog::on_close, this);
 }
@@ -102,6 +106,10 @@ void WebViewDevDialog::create_webview()
 
     m_view->events().on_created = [this]()
     {
+        // The controller can complete before the dialog was laid out: run the
+        // sizer once so the host panel holds a real rect (same hardening as
+        // WebViewPageBase).
+        Layout();
         apply_view_bounds();
         m_view->navigate("https://orca-sdk-test.orca/index.html");
     };
@@ -203,10 +211,19 @@ void WebViewDevDialog::apply_view_bounds()
     if (!m_view || m_view->state() != orca::wv::WebView::State::Ready)
         return;
 
-    // set_bounds takes PHYSICAL pixels; convert the logical client size.
+#if defined(_WIN32)
+    // Physical pixels straight from the native parent (see
+    // WebViewPageBase::apply_bounds: GetClientSize is already physical on
+    // wxMSW and must not be rescaled by the content scale factor on high DPI).
+    RECT native_client{};
+    if (!::GetClientRect(m_host_panel->GetHandle(), &native_client))
+        return;
+    m_view->set_bounds(0, 0, native_client.right, native_client.bottom);
+#else
     const wxSize client = m_host_panel->GetClientSize();
     const double scale  = m_host_panel->GetContentScaleFactor();
     m_view->set_bounds(0, 0, static_cast<int>(client.GetWidth() * scale), static_cast<int>(client.GetHeight() * scale));
+#endif
 }
 
 void WebViewDevDialog::apply_plugin_view_bounds()
@@ -218,11 +235,18 @@ void WebViewDevDialog::apply_plugin_view_bounds()
     if (!view || view->state() != orca::wv::WebView::State::Ready)
         return;
 
-    // Same panel and conversion as apply_view_bounds; the plugin view is
+    // Same panel and sizing as apply_view_bounds; the plugin view is
     // shown in place of the dev view while the session is up.
+#if defined(_WIN32)
+    RECT native_client{};
+    if (!::GetClientRect(m_host_panel->GetHandle(), &native_client))
+        return;
+    view->set_bounds(0, 0, native_client.right, native_client.bottom);
+#else
     const wxSize client = m_host_panel->GetClientSize();
     const double scale  = m_host_panel->GetContentScaleFactor();
     view->set_bounds(0, 0, static_cast<int>(client.GetWidth() * scale), static_cast<int>(client.GetHeight() * scale));
+#endif
 }
 
 void WebViewDevDialog::ensure_plugin_host()

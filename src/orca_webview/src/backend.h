@@ -28,6 +28,8 @@ public:
     virtual void         report_error(const Status& status) = 0;
     virtual void         report_message(std::string message) = 0;
     virtual void         report_document_loaded(const NavigationState& state) = 0;
+    // Non-fatal navigation failure (page error); the state machine is unchanged.
+    virtual void         report_navigation_failed(const NavigationState& state, const Status& status) = 0;
     virtual void         report_title(std::string title) = 0;
     virtual void         report_url_changed(std::string url) = 0;
     virtual bool         query_navigation(const NavigationState& state) = 0;   // false = veto

@@ -81,7 +81,31 @@ WebViewPageBase::WebViewPageBase(wxWindow* parent)
     sizer->Add(m_host_panel, 1, wxEXPAND);
     SetSizer(sizer);
 
-    Bind(wxEVT_SIZE, &WebViewPageBase::on_size, this);
+    // Bind on the host panel, not on this page: the sizer resizes the host
+    // panel only while processing this page's own size event, so a page-level
+    // handler would always read the stale pre-layout client size and the
+    // webview would keep its initial bounds (a 20x0 sliver on notebook pages
+    // that are laid out once, when first selected).
+    m_host_panel->Bind(wxEVT_SIZE, &WebViewPageBase::on_size, this);
+
+    // Resizes that reach the page while the host panel itself sees no size
+    // event (hidden notebook pages are skipped by the book control's layout,
+    // so a window-geometry restore leaves their webview at a stale rect) fall
+    // through to this deferred pass: CallAfter lets the sizer finish first,
+    // the pending flag coalesces a resize burst into a single bounds read.
+    Bind(wxEVT_SIZE, [this](wxSizeEvent& event)
+    {
+        event.Skip();
+        if (m_view && !m_bounds_pass_pending)
+        {
+            m_bounds_pass_pending = true;
+            CallAfter([this]()
+            {
+                m_bounds_pass_pending = false;
+                apply_bounds();
+            });
+        }
+    });
 }
 
 WebViewPageBase::~WebViewPageBase()
@@ -124,9 +148,14 @@ bool WebViewPageBase::create_view(const orca::wv::WebView::Config& cfg)
         BOOST_LOG_TRIVIAL(error) << "WebViewPageBase: webview create failed: " << status.message;
         return false;
     }
+    m_view_parent_hwnd = m_host_panel->GetHandle();
 
     m_view->events().on_created = [this]()
     {
+        // The controller can complete before this page was ever laid out
+        // (notebook pages are created hidden): run the sizer once so the host
+        // panel holds a real rect before the first bounds read.
+        Layout();
         apply_bounds();
         SSWCP::register_web_sink(sswcp_handle(), [weak = std::weak_ptr<orca::wv::WebView>(m_view)](const std::string& script)
         {
@@ -135,6 +164,14 @@ bool WebViewPageBase::create_view(const orca::wv::WebView::Config& cfg)
         on_view_created();
     };
     m_view->events().on_error   = [this](const orca::wv::Status& st) { on_view_error(st); };
+    m_view->events().on_navigation_failed = [this](const orca::wv::NavigationState& nav, const orca::wv::Status& st)
+    {
+        // Non-fatal by design; logged because a blank view over a silent
+        // navigation failure is otherwise undiagnosable.
+        BOOST_LOG_TRIVIAL(error) << "WebViewPageBase: navigation failed: url=" << nav.url
+                                 << " code=" << static_cast<int>(st.code)
+                                 << " native=" << st.native;
+    };
     m_view->events().on_message = [this](const std::string& msg) { on_message(msg); };
     m_view->events().on_navigation = [this](const orca::wv::NavigationState& nav) { return on_navigation(nav.url); };
     m_view->events().on_document_loaded = [this](const orca::wv::NavigationState& nav) { on_document_loaded(nav.url); };
@@ -240,10 +277,35 @@ void WebViewPageBase::apply_bounds()
     if (!m_view || m_view->state() != orca::wv::WebView::State::Ready)
         return;
 
-    // set_bounds takes PHYSICAL pixels; convert the logical client size.
+    // The native view is not a wx child: if wx recreated the host panel's
+    // HWND, the view stays parented to the dead HWND - put_Bounds keeps
+    // succeeding on an invisible window. Surface it loudly.
+    if (void* current = m_host_panel->GetHandle(); current != m_view_parent_hwnd)
+        BOOST_LOG_TRIVIAL(error) << "WebViewPageBase: host HWND recreated ("
+                                 << m_view_parent_hwnd << " -> " << current
+                                 << "), the native view is orphaned on the old HWND";
+
+    // Self-heal visibility: nothing in this tree hides the controller, but an
+    // invisible one paints nothing, so force it back on (idempotent).
+    m_view->set_visible(true);
+
+#if defined(_WIN32)
+    // set_bounds takes PHYSICAL pixels and the view is clipped to the host
+    // panel's real native client rect. GetClientSize already returns physical
+    // pixels on wxMSW, so rescaling it by the content scale factor inflated
+    // the bounds on high DPI (175% here): the view poked far outside its
+    // parent and was clipped to a blank sliver. Read the native rect instead
+    // - no conversion, no drift. Never resize the wx-owned host panel here:
+    // a native SetWindowPos behind the sizer's back corrupts the layout.
+    RECT native_client{};
+    if (!::GetClientRect(m_host_panel->GetHandle(), &native_client))
+        return;
+    m_view->set_bounds(0, 0, native_client.right, native_client.bottom);
+#else
     const wxSize client = m_host_panel->GetClientSize();
     const double scale  = m_host_panel->GetContentScaleFactor();
     m_view->set_bounds(0, 0, static_cast<int>(client.GetWidth() * scale), static_cast<int>(client.GetHeight() * scale));
+#endif
 }
 
 void WebViewPageBase::close_view()
