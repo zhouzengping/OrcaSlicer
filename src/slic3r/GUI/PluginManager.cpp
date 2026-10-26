@@ -553,13 +553,8 @@ void PluginManager::register_center_apis(orca::jb::Bridge* bridge)
     register_api_checked(bridge, "plugin.install_sample", plugin_install_sample);
 
     // Center bridge: origin-only filament list (see filament_list_api).
-    // Method names are two-segment ("orca.<noun>") transitional names: the
-    // jsbridge protocol accepts 2-8 segment namespace paths (camelCase
-    // allowed) on registration AND on every incoming call frame; these
-    // APIs move to the namespace style (orca.preset.* etc.) in a later
-    // renaming pass.
-    register_api_checked(bridge, "orca.filaments", filament_list_api(std::string()));
-    register_api_checked(bridge, "orca.host", host_info_api());
+    register_api_checked(bridge, "orca.filament.list", filament_list_api(std::string()));
+    register_api_checked(bridge, "orca.host.info", host_info_api());
 }
 
 orca::plugin::PluginHost* PluginManager::ensure_host()
@@ -576,10 +571,10 @@ orca::plugin::PluginHost* PluginManager::ensure_host()
     m_host                    = std::make_unique<orca::plugin::PluginHost>(env);
 
     // Host API surface cloned into every plugin session bridge (same handlers
-    // the plugin center page sees). orca.filaments is tagged here: plugin
+    // the plugin center page sees). filament.list is tagged here: plugin
     // sessions go through the manifest-declared permission chain.
-    register_api_checked(m_host.get(), "orca.host", host_info_api());
-    register_api_checked(m_host.get(), "orca.filaments", filament_list_api("project.filaments.read"));
+    register_api_checked(m_host.get(), "orca.host.info", host_info_api());
+    register_api_checked(m_host.get(), "orca.filament.list", filament_list_api("project.filaments.read"));
 
     return m_host.get();
 }

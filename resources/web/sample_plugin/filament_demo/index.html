@@ -189,7 +189,7 @@
         'use strict';
 
         // Sample plugin for the Orca plugin center: lists the filaments of
-        // the current project via orca.filaments and refreshes every time
+        // the current project via orca.filament.list and refreshes every time
         // the tab becomes active again (page.state event). Runs offline; the
         // Orca SDK is injected by the native host, not bundled here.
 
@@ -291,7 +291,7 @@
             refreshBtn.disabled = true;
             refreshBtn.classList.add('loading');
             try {
-                const res = await window.orca.call('orca.filaments', {});
+                const res = await window.orca.call('orca.filament.list', {});
                 const filaments = (res && Array.isArray(res.filaments)) ? res.filaments : [];
                 if (filaments.length === 0) {
                     showEmpty();

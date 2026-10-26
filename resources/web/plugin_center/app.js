@@ -6,8 +6,7 @@
 // shown instead. Everything goes through window.orca.call with the frozen
 // wire contract:
 //   plugin.list / plugin.pick_import / plugin.import / plugin.remove /
-//   plugin.open / plugin.close / plugin.install_sample / orca.host /
-//   orca.filaments
+//   plugin.open / plugin.close / plugin.install_sample / orca.host.info
 // plus the page.state event.
 
 // ---------------------------------------------------------------------------
@@ -511,7 +510,7 @@ let lastActiveRefreshAt = 0;
 // Host version shown in the footer; best effort only.
 async function loadHostInfo() {
     try {
-        const info = await window.orca.call('orca.host', {});
+        const info = await window.orca.call('orca.host.info', {});
         if (info && info.host_version) {
             document.getElementById('page-footer').textContent = 'OrcaSlicer ' + info.host_version;
         }
