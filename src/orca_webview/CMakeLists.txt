@@ -18,6 +18,9 @@ if (WIN32)
     # next to the exe by Snapmaker_Orca_copy_dlls (see root CMakeLists.txt).
     target_include_directories(orca_webview SYSTEM PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/../../deps/WebView2/include)
+    # WebViewTrace diagnostics in backend_win.cpp use BOOST_LOG_TRIVIAL; the
+    # boost DLLs already ship next to the exe via the slicer targets.
+    target_link_libraries(orca_webview PRIVATE boost_libs)
 elseif (APPLE)
     target_sources(orca_webview PRIVATE src/backend_mac.mm)
     # The backend bridge objects are written for ARC regardless of the

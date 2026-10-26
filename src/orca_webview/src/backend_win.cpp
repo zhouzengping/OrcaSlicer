@@ -390,8 +390,16 @@ private:
             {
                 if (state->closed)
                 {
-                    // The callback parameter is only borrowed; releasing it here
-                    // would decrement the runtime's count, not ours. Just drop it.
+                    // The backend is gone but creation may still have
+                    // succeeded: a live controller owns a browser process tree
+                    // holding the shared user data folder, and a closed
+                    // backend must not keep one (an orphaned tree outlives the
+                    // app and blocks the next environment creation). Close
+                    // tears the tree down; the callback parameter is only
+                    // borrowed, so no Release and no storage, and Close does
+                    // not touch the reference count.
+                    if (SUCCEEDED(errorCode) && controller != nullptr)
+                        controller->Close();
                     return;
                 }
                 on_controller_created(errorCode, controller);
